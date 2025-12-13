@@ -31,6 +31,9 @@ tv_watch_summary.csv
 .claude.json
 .claude.json.backup
 
+# Config (user-specific)
+config.json
+
 # Other
 mjpg-streamer/
 .gitconfig

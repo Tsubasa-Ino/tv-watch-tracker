@@ -1,0 +1,10 @@
+{
+  "camera_device": 0,
+  "interval_sec": 5,
+  "tolerance": 0.5,
+  "face_model": "cnn",
+  "upsample": 0,
+  "encodings_path": "~/encodings.pkl",
+  "log_path": "~/tv_watch_log.csv",
+  "target_names": ["mio", "yu", "tsubasa"]
+}

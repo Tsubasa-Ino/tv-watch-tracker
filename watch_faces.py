@@ -2,19 +2,43 @@
 import os
 import time
 import csv
+import json
 import datetime as dt
 
 import cv2
 import face_recognition
 import pickle
 
-# 設定
-ENC_PATH = os.path.expanduser("~/encodings.pkl")
-LOG_PATH = os.path.expanduser("~/tv_watch_log.csv")
-INTERVAL_SEC = 5           # 何秒ごとに判定するか
-TOLERANCE = 0.5            # 顔の類似度しきい値（小さいほど厳しい）
-FACE_MODEL = "cnn"         # さっきのテストで有効だったモデル
-UPSAMPLE = 0               # 同上
+# 設定ファイル読み込み
+CONFIG_PATH = os.path.expanduser("~/config.json")
+
+def load_config():
+    """設定ファイルを読み込む。なければデフォルト値を返す"""
+    defaults = {
+        "camera_device": 0,
+        "interval_sec": 5,
+        "tolerance": 0.5,
+        "face_model": "cnn",
+        "upsample": 0,
+        "encodings_path": "~/encodings.pkl",
+        "log_path": "~/tv_watch_log.csv",
+    }
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            user_config = json.load(f)
+            defaults.update(user_config)
+    return defaults
+
+config = load_config()
+
+# 設定値を変数に展開
+CAMERA_DEVICE = config["camera_device"]
+ENC_PATH = os.path.expanduser(config["encodings_path"])
+LOG_PATH = os.path.expanduser(config["log_path"])
+INTERVAL_SEC = config["interval_sec"]
+TOLERANCE = config["tolerance"]
+FACE_MODEL = config["face_model"]
+UPSAMPLE = config["upsample"]
 
 # 既知の顔エンコーディング読み込み
 data = pickle.load(open(ENC_PATH, "rb"))
@@ -32,7 +56,7 @@ if not os.path.exists(LOG_PATH):
     print("created log file:", LOG_PATH)
 
 # カメラオープン
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(CAMERA_DEVICE)
 if not cap.isOpened():
     raise RuntimeError("カメラが開けませんでした（/dev/video0？）")
 

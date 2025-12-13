@@ -18,7 +18,23 @@ source venv/bin/activate
 pip install opencv-python face_recognition
 ```
 
-### 2. 顔の登録
+### 2. 設定ファイル
+
+```bash
+cp config.json.example config.json
+# 必要に応じて編集
+```
+
+設定項目：
+| 項目 | 説明 | デフォルト |
+|------|------|-----------|
+| `camera_device` | カメラデバイス番号 | 0 |
+| `interval_sec` | 検出間隔（秒） | 5 |
+| `tolerance` | 顔認識の閾値（小さいほど厳格） | 0.5 |
+| `face_model` | 顔検出モデル（cnn/hog） | cnn |
+| `target_names` | 集計対象の名前リスト | ["mio", "yu", "tsubasa"] |
+
+### 3. 顔の登録
 
 ```bash
 # 顔写真を撮影
@@ -28,7 +44,7 @@ python capture_faces.py --name <名前> --count 15
 python build_encodings.py
 ```
 
-### 3. 監視の開始
+### 4. 監視の開始
 
 ```bash
 python watch_faces.py

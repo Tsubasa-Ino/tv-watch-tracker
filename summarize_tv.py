@@ -1,14 +1,32 @@
 #!/usr/bin/env python3
 import os
 import csv
+import json
 import datetime as dt
 from collections import defaultdict
 
-LOG_PATH = os.path.expanduser("~/tv_watch_log.csv")
-OUT_PATH = os.path.expanduser("~/tv_watch_summary.csv")
+# 設定ファイル読み込み
+CONFIG_PATH = os.path.expanduser("~/config.json")
 
-INTERVAL_SEC = 5  # watch_faces.py と合わせる
-TARGET_NAMES = ["mio", "yu", "tsubasa"]  # ★ ここに tsuabsa 追加
+def load_config():
+    """設定ファイルを読み込む。なければデフォルト値を返す"""
+    defaults = {
+        "interval_sec": 5,
+        "log_path": "~/tv_watch_log.csv",
+        "target_names": ["mio", "yu", "tsubasa"],
+    }
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            user_config = json.load(f)
+            defaults.update(user_config)
+    return defaults
+
+config = load_config()
+
+LOG_PATH = os.path.expanduser(config["log_path"])
+OUT_PATH = os.path.expanduser("~/tv_watch_summary.csv")
+INTERVAL_SEC = config["interval_sec"]
+TARGET_NAMES = config["target_names"]
 
 # 日付×名前で分数を集計
 minutes = defaultdict(float)
