@@ -15,6 +15,7 @@ new_faces/
 tv_watch_log.csv
 tv_watch_log_backup.csv
 tv_watch_summary.csv
+tv_watch_archives/
 
 # System
 .bash_history

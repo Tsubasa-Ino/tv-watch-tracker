@@ -68,6 +68,22 @@ sudo systemctl status tv-watch-tracker
 journalctl -u tv-watch-tracker -f
 ```
 
+## ログローテーション
+
+月別にログをアーカイブし、メインログファイルを軽量に保ちます。
+
+```bash
+# 手動実行
+python rotate_logs.py
+
+# cronで毎月1日に自動実行
+crontab -e
+# 以下を追加:
+# 0 0 1 * * /home/pi/venv/bin/python /home/pi/rotate_logs.py
+```
+
+アーカイブは `~/tv_watch_archives/` に gzip 圧縮で保存されます。
+
 ## ファイル構成
 
 | ファイル | 説明 |
@@ -76,4 +92,5 @@ journalctl -u tv-watch-tracker -f
 | `build_encodings.py` | 顔エンコーディング生成 |
 | `capture_faces.py` | 顔写真撮影ユーティリティ |
 | `summarize_tv.py` | 視聴時間集計 |
+| `rotate_logs.py` | ログローテーション |
 | `tv-watch-tracker.service` | systemdサービス定義 |
