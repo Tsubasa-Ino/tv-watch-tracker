@@ -68,6 +68,29 @@ sudo systemctl status tv-watch-tracker
 journalctl -u tv-watch-tracker -f
 ```
 
+## Webダッシュボード
+
+ブラウザで視聴データをグラフ表示できます。
+
+```bash
+# Flask インストール
+pip install flask
+
+# 起動
+python dashboard.py
+```
+
+ブラウザで `http://<ラズパイIP>:5000` にアクセス。
+
+### ダッシュボードの自動起動
+
+```bash
+sudo cp tv-watch-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable tv-watch-dashboard
+sudo systemctl start tv-watch-dashboard
+```
+
 ## ログローテーション
 
 月別にログをアーカイブし、メインログファイルを軽量に保ちます。
@@ -93,4 +116,6 @@ crontab -e
 | `capture_faces.py` | 顔写真撮影ユーティリティ |
 | `summarize_tv.py` | 視聴時間集計 |
 | `rotate_logs.py` | ログローテーション |
-| `tv-watch-tracker.service` | systemdサービス定義 |
+| `dashboard.py` | Webダッシュボード |
+| `tv-watch-tracker.service` | 監視用systemdサービス |
+| `tv-watch-dashboard.service` | ダッシュボード用systemdサービス |
