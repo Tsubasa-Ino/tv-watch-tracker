@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# Data files (large/personal)
+encodings.pkl
+*.jpg
+*.jpeg
+*.png
+faces/
+new_faces/
+
+# Logs (personal data)
+tv_watch_log.csv
+tv_watch_log_backup.csv
+tv_watch_summary.csv
+
+# System
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.sudo_as_admin_successful
+.cache/
+.config/
+.ssh/
+.npm/
+.nvm/
+.claude/
+.claude.json
+.claude.json.backup
+
+# Other
+mjpg-streamer/
+.gitconfig
