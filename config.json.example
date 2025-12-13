@@ -6,5 +6,7 @@
   "upsample": 0,
   "encodings_path": "~/encodings.pkl",
   "log_path": "~/tv_watch_log.csv",
-  "target_names": ["mio", "yu", "tsubasa"]
+  "target_names": ["mio", "yu", "tsubasa"],
+  "camera_retry_sec": 5,
+  "max_camera_retries": 10
 }
