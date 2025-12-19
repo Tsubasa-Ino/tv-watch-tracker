@@ -251,10 +251,6 @@ HTML_TEMPLATE = """
                 </div>
 
                 <div id="roiEditControls" style="display:none;margin-top:15px;">
-                    <div class="form-group" style="max-width:300px;">
-                        <label>ROI名（保存用）</label>
-                        <input type="text" id="roiName" placeholder="例: リビング, ソファ前">
-                    </div>
                     <button class="btn btn-success" onclick="saveRoiPreset()">ROI追加保存</button>
                     <button class="btn btn-danger" onclick="clearRoiDraw()">描画クリア</button>
                 </div>
@@ -263,7 +259,6 @@ HTML_TEMPLATE = """
 
             <div class="card">
                 <h2>保存済みROI一覧</h2>
-                <p style="color:#888;margin-bottom:15px;">クリックで選択（顔認識に使用）、×で削除</p>
                 <div id="roiPresetList" class="roi-preset"></div>
                 <div id="roiPresetStatus"></div>
             </div>
@@ -702,14 +697,13 @@ HTML_TEMPLATE = """
                 alert('ROIを描画してください');
                 return;
             }
-            const name = document.getElementById('roiName').value.trim() || 'ROI ' + (roiPresets.length + 1);
+            const name = 'ROI ' + (roiPresets.length + 1);
             fetch('/api/roi_presets/add', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({roi: {...currentRoi, name: name}})
             }).then(r => r.json()).then(data => {
                 if (data.success) {
-                    document.getElementById('roiName').value = '';
                     currentRoi = null;
                     drawRoi();
                     updateRoiInfo();
