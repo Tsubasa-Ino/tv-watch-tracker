@@ -298,10 +298,9 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>ROI適用</label>
-                        <select id="registerUseRoi" onchange="loadRegisterImages()">
-                            <option value="1" selected>ON</option>
-                            <option value="0">OFF</option>
+                        <label>ROI選択</label>
+                        <select id="registerRoiSelect" onchange="loadRegisterImages()">
+                            <option value="">使用しない</option>
                         </select>
                     </div>
                 </div>
@@ -373,10 +372,9 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>ROI適用</label>
-                        <select id="recogUseRoi" onchange="loadRecogImages()">
-                            <option value="1">ON</option>
-                            <option value="0">OFF</option>
+                        <label>ROI選択</label>
+                        <select id="recogRoiSelect" onchange="loadRecogImages()">
+                            <option value="">使用しない</option>
                         </select>
                     </div>
                 </div>
@@ -521,8 +519,8 @@ HTML_TEMPLATE = """
 
             if (tabId === 'camera') { checkCameraStatus(); loadCaptures(); }
             if (tabId === 'roi') { loadRoiImages(); loadRoiPresets(); }
-            if (tabId === 'register') { loadRegisterImages(); loadLabeledFaces(); }
-            if (tabId === 'recognize') { loadRecogImages(); }
+            if (tabId === 'register') { populateRoiDropdown('registerRoiSelect'); loadRegisterImages(); loadLabeledFaces(); }
+            if (tabId === 'recognize') { populateRoiDropdown('recogRoiSelect'); loadRecogImages(); }
             if (tabId === 'dashboard') { loadDashboard(); loadServiceStatus(); loadConfig(); startDashboardRefresh(); }
             else { stopDashboardRefresh(); }
         }
@@ -652,6 +650,24 @@ HTML_TEMPLATE = """
             });
         }
 
+        function populateRoiDropdown(selectId) {
+            fetch('/api/roi_presets').then(r => r.json()).then(data => {
+                const select = document.getElementById(selectId);
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">使用しない</option>';
+                (data.presets || []).forEach((p, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = p.name || ('ROI ' + (i+1));
+                    select.appendChild(opt);
+                });
+                // 前回の選択を維持
+                if (currentValue && select.querySelector(`option[value="${currentValue}"]`)) {
+                    select.value = currentValue;
+                }
+            });
+        }
+
         function renderRoiPresets() {
             const container = document.getElementById('roiPresetList');
             if (roiPresets.length === 0) {
@@ -659,26 +675,12 @@ HTML_TEMPLATE = """
                 return;
             }
             container.innerHTML = roiPresets.map((p, i) => `
-                <div class="roi-preset-item ${i === activeRoiIndex ? 'active' : ''}" onclick="selectRoiPreset(${i})">
+                <div class="roi-preset-item">
                     <span>${p.name || 'ROI ' + (i+1)}</span>
                     <small style="color:#888;">(${p.x},${p.y} ${p.w}x${p.h})</small>
-                    <span class="delete-roi" onclick="event.stopPropagation();deleteRoiPreset(${i})">&times;</span>
+                    <span class="delete-roi" onclick="deleteRoiPreset(${i})">&times;</span>
                 </div>
             `).join('');
-        }
-
-        function selectRoiPreset(index) {
-            fetch('/api/roi_presets/select', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({index: index})
-            }).then(r => r.json()).then(data => {
-                if (data.success) {
-                    activeRoiIndex = index;
-                    renderRoiPresets();
-                    showStatus('roiPresetStatus', 'ROI "' + roiPresets[index].name + '" を選択しました', 'success');
-                }
-            });
         }
 
         function deleteRoiPreset(index) {
@@ -829,7 +831,7 @@ HTML_TEMPLATE = """
         let detectedFacesData = [];
 
         function loadRegisterImages() {
-            const useRoi = document.getElementById('registerUseRoi').value;
+            const roiIndex = document.getElementById('registerRoiSelect').value;
             fetch('/captures').then(r => r.json()).then(data => {
                 const grid = document.getElementById('registerImageGrid');
                 if (data.length === 0) {
@@ -838,7 +840,7 @@ HTML_TEMPLATE = """
                 }
                 grid.innerHTML = data.map(f => `
                     <div class="grid-item" onclick="toggleRegisterImage('${f}', this)">
-                        <img src="/thumbnail_roi/${f}?roi=${useRoi}&${Date.now()}">
+                        <img src="/thumbnail_roi/${f}?roi_index=${roiIndex}&${Date.now()}">
                         <div class="filename">${f}</div>
                     </div>
                 `).join('');
@@ -869,7 +871,7 @@ HTML_TEMPLATE = """
             registerParams.model = document.getElementById('registerModel').value;
             registerParams.upsample = parseInt(document.getElementById('registerUpsample').value);
             registerParams.resize = parseInt(document.getElementById('registerResize').value);
-            registerParams.useRoi = document.getElementById('registerUseRoi').value === '1';
+            registerParams.roiIndex = document.getElementById('registerRoiSelect').value;
 
             const images = Array.from(selectedRegisterImages);
             let completed = 0;
@@ -878,7 +880,7 @@ HTML_TEMPLATE = """
                 fetch('/detect_faces_only', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({image, model: registerParams.model, upsample: registerParams.upsample, resize: registerParams.resize, use_roi: registerParams.useRoi})
+                    body: JSON.stringify({image, model: registerParams.model, upsample: registerParams.upsample, resize: registerParams.resize, roi_index: registerParams.roiIndex})
                 }).then(r => r.json()).then(data => {
                     if (data.success && data.faces.length > 0) {
                         data.faces.forEach((f, i) => {
@@ -906,7 +908,7 @@ HTML_TEMPLATE = """
             const container = document.getElementById('registerFaces');
             container.innerHTML = detectedFacesData.map((f, i) => `
                 <div class="face-select selected" data-index="${i}" onclick="toggleFaceSelect(this)">
-                    <img src="/face_crop/${f.image}/${f.idx}?ur=${p.useRoi ? 1 : 0}&model=${p.model}&upsample=${p.upsample}&resize=${p.resize}&${Date.now()}">
+                    <img src="/face_crop/${f.image}/${f.idx}?roi_index=${p.roiIndex}&model=${p.model}&upsample=${p.upsample}&resize=${p.resize}&${Date.now()}">
                 </div>
             `).join('');
         }
@@ -952,7 +954,7 @@ HTML_TEMPLATE = """
                         image: faceData.image,
                         idx: faceData.idx,
                         label: label,
-                        use_roi: p.useRoi,
+                        roi_index: p.roiIndex,
                         model: p.model,
                         upsample: p.upsample,
                         resize: p.resize
@@ -1044,7 +1046,7 @@ HTML_TEMPLATE = """
 
         // 顔認識テスト
         function loadRecogImages() {
-            const useRoi = document.getElementById('recogUseRoi').value;
+            const roiIndex = document.getElementById('recogRoiSelect').value;
             fetch('/captures').then(r => r.json()).then(data => {
                 const grid = document.getElementById('recogImageGrid');
                 if (data.length === 0) {
@@ -1053,7 +1055,7 @@ HTML_TEMPLATE = """
                 }
                 grid.innerHTML = data.map(f => `
                     <div class="grid-item" onclick="selectRecogImage('${f}', this)">
-                        <img src="/thumbnail_roi/${f}?roi=${useRoi}&${Date.now()}">
+                        <img src="/thumbnail_roi/${f}?roi_index=${roiIndex}&${Date.now()}">
                         <div class="filename">${f}</div>
                     </div>
                 `).join('');
@@ -1071,7 +1073,7 @@ HTML_TEMPLATE = """
             const model = document.getElementById('recogModel').value;
             const upsample = document.getElementById('recogUpsample').value;
             const tolerance = document.getElementById('recogTolerance').value;
-            const useRoi = document.getElementById('recogUseRoi').value;
+            const roiIndex = document.getElementById('recogRoiSelect').value;
 
             if (!image) { alert('画像を選択してください'); return; }
 
@@ -1080,7 +1082,7 @@ HTML_TEMPLATE = """
             fetch('/recognize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({image, model, upsample: parseInt(upsample), tolerance: parseFloat(tolerance), use_roi: useRoi === '1'})
+                body: JSON.stringify({image, model, upsample: parseInt(upsample), tolerance: parseFloat(tolerance), roi_index: roiIndex})
             }).then(r => r.json()).then(data => {
                 if (data.success) {
                     const roiText = data.roi_used ? ' [ROI適用]' : '';
@@ -1095,7 +1097,7 @@ HTML_TEMPLATE = """
                             <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
                                 ${data.faces.map((f, i) => `
                                     <div class="face-box" style="border-left:4px solid ${nameColors[f.name] || '#888'};">
-                                        <img src="/face_crop/${data.image}/${i}?ur=${useRoi}&${Date.now()}">
+                                        <img src="/face_crop/${data.image}/${i}?roi_index=${roiIndex}&${Date.now()}">
                                         <div style="color:${nameColors[f.name] || '#888'};font-weight:bold;">${f.name}</div>
                                         <div style="font-size:0.8em;color:#888;">距離: ${f.distance.toFixed(3)}</div>
                                     </div>
@@ -1445,13 +1447,28 @@ def delete_capture():
         os.remove(path)
     return jsonify({"success": True})
 
+def get_roi_by_index(roi_index):
+    """ROIインデックスからROIを取得"""
+    if roi_index == "" or roi_index is None:
+        return None
+    try:
+        idx = int(roi_index)
+        config = load_config()
+        presets = config.get("roi_presets", [])
+        if 0 <= idx < len(presets):
+            return presets[idx]
+    except (ValueError, TypeError):
+        pass
+    return None
+
 @app.route("/thumbnail_roi/<filename>")
 def thumbnail_roi(filename):
     path = os.path.join(CAPTURES_DIR, filename)
     if not os.path.exists(path):
         return "Not found", 404
 
-    use_roi = request.args.get("roi", "1") == "1"
+    roi_index = request.args.get("roi_index", "")
+    roi = get_roi_by_index(roi_index)
 
     img = cv2.imread(path)
     h, w = img.shape[:2]
@@ -1460,25 +1477,22 @@ def thumbnail_roi(filename):
     scale = thumb_size / max(h, w)
     thumb = cv2.resize(img, (int(w * scale), int(h * scale)))
 
-    if use_roi:
-        config = load_config()
-        roi = config.get("roi")
-        if roi:
-            x = int(roi["x"] * scale)
-            y = int(roi["y"] * scale)
-            rw = int(roi["w"] * scale)
-            rh = int(roi["h"] * scale)
-            overlay = thumb.copy()
-            cv2.rectangle(overlay, (0, 0), (thumb.shape[1], thumb.shape[0]), (0, 0, 0), -1)
-            cv2.rectangle(overlay, (x, y), (x + rw, y + rh), (0, 0, 0), -1)
-            mask = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
-            mask[y:y+rh, x:x+rw] = 0
-            mask[mask > 0] = 128
-            thumb = cv2.addWeighted(thumb, 1, overlay, 0, 0)
-            dark = thumb.copy()
-            dark[mask > 0] = (dark[mask > 0] * 0.4).astype('uint8')
-            thumb = dark
-            cv2.rectangle(thumb, (x, y), (x + rw, y + rh), (0, 212, 255), 2)
+    if roi:
+        x = int(roi["x"] * scale)
+        y = int(roi["y"] * scale)
+        rw = int(roi["w"] * scale)
+        rh = int(roi["h"] * scale)
+        overlay = thumb.copy()
+        cv2.rectangle(overlay, (0, 0), (thumb.shape[1], thumb.shape[0]), (0, 0, 0), -1)
+        cv2.rectangle(overlay, (x, y), (x + rw, y + rh), (0, 0, 0), -1)
+        mask = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
+        mask[y:y+rh, x:x+rw] = 0
+        mask[mask > 0] = 128
+        thumb = cv2.addWeighted(thumb, 1, overlay, 0, 0)
+        dark = thumb.copy()
+        dark[mask > 0] = (dark[mask > 0] * 0.4).astype('uint8')
+        thumb = dark
+        cv2.rectangle(thumb, (x, y), (x + rw, y + rh), (0, 212, 255), 2)
 
     _, jpeg = cv2.imencode('.jpg', thumb, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
@@ -1503,13 +1517,23 @@ def api_roi_preset_add():
         return jsonify({"success": False, "error": "ROIが必要です"})
 
     presets = config.get("roi_presets", [])
+
+    # 既存のROI番号から次の番号を決定
+    max_num = 0
+    for p in presets:
+        name = p.get("name", "")
+        if name.startswith("ROI "):
+            try:
+                num = int(name[4:])
+                max_num = max(max_num, num)
+            except:
+                pass
+    roi["name"] = f"ROI {max_num + 1}"
+
     presets.append(roi)
     config["roi_presets"] = presets
-    # 新規追加時は自動的にアクティブに
-    config["roi_active_index"] = len(presets) - 1
-    config["roi"] = roi  # 後方互換性
     save_config(config)
-    return jsonify({"success": True})
+    return jsonify({"success": True, "name": roi["name"]})
 
 @app.route("/api/roi_presets/select", methods=["POST"])
 def api_roi_preset_select():
@@ -1572,15 +1596,14 @@ def detect_faces_only():
     model = data.get("model", "hog")
     upsample = data.get("upsample", 2)
     resize = data.get("resize", 640)
-    use_roi = data.get("use_roi", True)
+    roi_index = data.get("roi_index", "")
 
     path = os.path.join(CAPTURES_DIR, image)
     if not os.path.exists(path):
         return jsonify({"success": False, "error": "画像が見つかりません"})
 
     img = cv2.imread(path)
-    config = load_config()
-    roi = config.get("roi") if use_roi else None
+    roi = get_roi_by_index(roi_index)
 
     if roi:
         x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
@@ -1619,7 +1642,7 @@ def recognize():
     model = data.get("model", "hog")
     upsample = data.get("upsample", 2)
     tolerance = data.get("tolerance", 0.5)
-    use_roi = data.get("use_roi", True)
+    roi_index = data.get("roi_index", "")
 
     path = os.path.join(CAPTURES_DIR, image)
     if not os.path.exists(path):
@@ -1642,8 +1665,7 @@ def recognize():
     img = cv2.imread(path)
     h, w = img.shape[:2]
 
-    config = load_config()
-    roi = config.get("roi") if use_roi else None
+    roi = get_roi_by_index(roi_index)
     roi_used = roi is not None
 
     if roi:
@@ -1720,14 +1742,13 @@ def face_crop(image, idx):
     if not os.path.exists(path):
         return "Not found", 404
 
-    use_roi = request.args.get("ur", "1") == "1"
+    roi_index = request.args.get("roi_index", "")
     model = request.args.get("model", "hog")
     upsample = int(request.args.get("upsample", "2"))
     resize = int(request.args.get("resize", "640"))
 
     img = cv2.imread(path)
-    config = load_config()
-    roi = config.get("roi") if use_roi else None
+    roi = get_roi_by_index(roi_index)
 
     if roi:
         x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
@@ -1773,7 +1794,7 @@ def save_face():
     image = data.get("image")
     idx = data.get("idx")
     label = data.get("label", "").strip().lower()
-    use_roi = data.get("use_roi", True)
+    roi_index = data.get("roi_index", "")
     model = data.get("model", "hog")
     upsample = data.get("upsample", 2)
     resize = data.get("resize", 640)
@@ -1786,8 +1807,7 @@ def save_face():
         return jsonify({"success": False, "error": "画像が見つかりません"})
 
     img = cv2.imread(path)
-    config = load_config()
-    roi = config.get("roi") if use_roi else None
+    roi = get_roi_by_index(roi_index)
 
     if roi:
         x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
