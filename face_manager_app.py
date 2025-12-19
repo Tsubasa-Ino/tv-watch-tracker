@@ -41,11 +41,21 @@ def save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
+def is_service_running():
+    """監視サービスが稼働中かチェック"""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "tv-watch-tracker"],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip() == "active"
+    except:
+        return False
+
 def get_camera():
     global camera
     if camera is None or not camera.isOpened():
-        os.system("sudo systemctl stop tv-watch-tracker 2>/dev/null")
-        time.sleep(0.5)
         camera = cv2.VideoCapture(0)
     return camera
 
@@ -54,6 +64,15 @@ def release_camera():
     if camera is not None:
         camera.release()
         camera = None
+
+def stop_service_and_get_camera():
+    """監視サービスを停止してカメラを取得"""
+    global camera
+    os.system("sudo systemctl stop tv-watch-tracker 2>/dev/null")
+    time.sleep(0.5)
+    if camera is None or not camera.isOpened():
+        camera = cv2.VideoCapture(0)
+    return camera
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -184,11 +203,18 @@ HTML_TEMPLATE = """
         <div id="camera" class="tab-content active">
             <div class="card">
                 <h2>リアルタイムプレビュー</h2>
-                <div class="preview-container">
-                    <img id="cameraPreview" src="/stream">
+                <div id="cameraOverlay" style="display:none;background:#0f3460;padding:30px;border-radius:8px;text-align:center;margin-bottom:15px;">
+                    <p style="color:#ffe66d;font-size:1.2em;margin-bottom:15px;">📹 監視サービス稼働中</p>
+                    <p style="color:#888;margin-bottom:20px;">カメラを使用するには監視サービスを停止する必要があります</p>
+                    <button class="btn btn-primary" onclick="startCamera()">カメラ開始（監視停止）</button>
                 </div>
-                <div style="margin-top:15px; text-align:center;">
-                    <button class="btn btn-success" onclick="capture()">撮影</button>
+                <div id="cameraContainer">
+                    <div class="preview-container">
+                        <img id="cameraPreview" src="/stream">
+                    </div>
+                    <div style="margin-top:15px; text-align:center;">
+                        <button class="btn btn-success" onclick="capture()">撮影</button>
+                    </div>
                 </div>
                 <div id="captureStatus"></div>
             </div>
@@ -455,12 +481,42 @@ HTML_TEMPLATE = """
             document.querySelector(`.tab[onclick="showTab('${tabId}')"]`).classList.add('active');
             document.getElementById(tabId).classList.add('active');
 
-            if (tabId === 'camera') loadCaptures();
-            if (tabId === 'roi') { refreshRoiImage(); loadRoi(); }
+            if (tabId === 'camera') { checkCameraStatus(); loadCaptures(); }
+            if (tabId === 'roi') { checkCameraStatus(); refreshRoiImage(); loadRoi(); }
             if (tabId === 'detect') loadDetectImages();
             if (tabId === 'register') loadRegisterImages();
             if (tabId === 'faces') { loadLabeledFaces(); }
             if (tabId === 'dashboard') { loadDashboard(); loadServiceStatus(); loadConfig(); }
+        }
+
+        // カメラ状態チェック
+        function checkCameraStatus() {
+            fetch('/camera_status').then(r => r.json()).then(data => {
+                const overlay = document.getElementById('cameraOverlay');
+                const container = document.getElementById('cameraContainer');
+                if (data.service_running) {
+                    overlay.style.display = 'block';
+                    container.style.display = 'none';
+                } else {
+                    overlay.style.display = 'none';
+                    container.style.display = 'block';
+                }
+            });
+        }
+
+        // カメラ開始
+        function startCamera() {
+            fetch('/start_camera', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('cameraOverlay').style.display = 'none';
+                        document.getElementById('cameraContainer').style.display = 'block';
+                        // ストリームをリロード
+                        const preview = document.getElementById('cameraPreview');
+                        preview.src = '/stream?' + Date.now();
+                    }
+                });
         }
 
         // ステータス表示
@@ -1100,6 +1156,7 @@ HTML_TEMPLATE = """
         }
 
         // 初期化
+        checkCameraStatus();
         loadCaptures();
     </script>
 </body>
@@ -1108,14 +1165,38 @@ HTML_TEMPLATE = """
 
 @app.route("/")
 def index():
-    get_camera()
     return render_template_string(HTML_TEMPLATE)
+
+# カメラ開始（監視サービスを停止）
+@app.route("/start_camera", methods=["POST"])
+def start_camera():
+    if is_service_running():
+        os.system("sudo systemctl stop tv-watch-tracker 2>/dev/null")
+        time.sleep(0.5)
+    get_camera()
+    return jsonify({"success": True})
+
+# カメラ状態確認
+@app.route("/camera_status")
+def camera_status():
+    service_running = is_service_running()
+    camera_available = camera is not None and camera.isOpened()
+    return jsonify({
+        "service_running": service_running,
+        "camera_available": camera_available
+    })
 
 # ストリーミング
 def gen_frames():
-    cam = get_camera()
+    global camera
     while True:
-        ret, frame = cam.read()
+        if camera is None or not camera.isOpened():
+            # 1x1 black pixel placeholder
+            placeholder = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+            yield (b'--frame\r\nContent-Type: image/png\r\n\r\n' + placeholder + b'\r\n')
+            time.sleep(1)
+            continue
+        ret, frame = camera.read()
         if not ret:
             time.sleep(0.1)
             continue
@@ -1128,6 +1209,8 @@ def stream():
 
 @app.route("/snapshot")
 def snapshot():
+    if is_service_running():
+        return jsonify({"error": "監視サービス稼働中"}), 503
     cam = get_camera()
     ret, frame = cam.read()
     if not ret:
@@ -1138,6 +1221,8 @@ def snapshot():
 # 撮影
 @app.route("/capture", methods=["POST"])
 def capture():
+    if is_service_running():
+        return jsonify({"success": False, "error": "監視サービス稼働中。カメラタブで「カメラ開始」を押してください"})
     cam = get_camera()
     ret, frame = cam.read()
     if not ret:
