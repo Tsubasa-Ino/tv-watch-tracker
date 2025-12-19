@@ -245,6 +245,7 @@ HTML_TEMPLATE = """
         <button class="tab" onclick="showTab('extract')">顔抽出</button>
         <button class="tab" onclick="showTab('register')">顔登録</button>
         <button class="tab" onclick="showTab('recognize')">顔認識テスト</button>
+        <button class="tab" onclick="showTab('settings')">顔認識設定</button>
         <button class="tab" onclick="showTab('dashboard')">ダッシュボード</button>
     </div>
     <div class="content">
@@ -360,6 +361,11 @@ HTML_TEMPLATE = """
                 <h2>登録済み顔一覧</h2>
                 <div id="registeredFaces"></div>
             </div>
+            <div class="card">
+                <h2>ラベル管理</h2>
+                <p style="color:#888;margin-bottom:15px;">画像未登録のラベルを表示・削除</p>
+                <div id="labelStatus"></div>
+            </div>
         </div>
 
         <!-- 顔認識テストタブ -->
@@ -409,10 +415,10 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- ダッシュボードタブ -->
-        <div id="dashboard" class="tab-content">
+        <!-- 顔認識設定タブ -->
+        <div id="settings" class="tab-content">
             <div class="card">
-                <h2>検出パラメータ設定</h2>
+                <h2>パラメータ設定</h2>
                 <div class="params">
                     <div class="form-group">
                         <label>検出モデル</label>
@@ -458,36 +464,57 @@ HTML_TEMPLATE = """
                     <span id="configStatus" style="margin-left:10px;"></span>
                 </div>
             </div>
+        </div>
+
+        <!-- ダッシュボードタブ -->
+        <div id="dashboard" class="tab-content">
             <div class="card">
-                <h2>今日の視聴時間（ラベル別）</h2>
-                <div id="todayByLabel" style="display:flex;flex-wrap:wrap;gap:15px;"></div>
+                <h2>直近の検出画像</h2>
+                <div style="margin-bottom:10px;">
+                    <label style="margin-right:15px;"><input type="checkbox" id="showRoi" checked onchange="updateLatestImage()"> ROI表示</label>
+                    <label><input type="checkbox" id="showBbox" checked onchange="updateLatestImage()"> BBox表示</label>
+                </div>
+                <div id="latestImageContainer" style="text-align:center;">
+                    <img id="latestImage" src="" style="max-width:100%;border-radius:8px;display:none;">
+                    <p id="noLatestImage" style="color:#888;">検出画像なし</p>
+                </div>
             </div>
             <div class="card">
-                <h2>今週の視聴時間（ラベル別）</h2>
-                <div id="weekByLabel" style="display:flex;flex-wrap:wrap;gap:15px;"></div>
+                <h2>視聴時間</h2>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <h3 style="color:#ffe66d;margin-bottom:10px;">本日</h3>
+                        <div id="todayByLabel" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <h3 style="color:#ffe66d;margin-bottom:10px;">今週</h3>
+                        <div id="weekByLabel" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+                    </div>
+                </div>
             </div>
             <div class="card">
-                <h2>検出状況</h2>
-                <h3 style="color:#ffe66d;margin:10px 0;">直近5枚</h3>
-                <div id="recentDetections" style="display:flex;gap:10px;overflow-x:auto;padding:10px 0;"></div>
-                <h3 style="color:#ffe66d;margin:15px 0 10px;">ラベル別 最新検出</h3>
-                <div id="labelDetections"></div>
+                <h2>検出状況（直近3時間）</h2>
+                <div id="detection3h"></div>
             </div>
             <div class="card">
-                <h2>本日の視聴状況</h2>
-                <div style="height:200px;"><canvas id="todayLineChart"></canvas></div>
+                <h2>視聴時間分布</h2>
+                <div style="margin-bottom:10px;">
+                    <input type="date" id="distributionDate" onchange="loadDistribution()">
+                </div>
+                <div style="height:200px;"><canvas id="distributionChart"></canvas></div>
             </div>
             <div class="card">
-                <h2>本日の時間帯別視聴（1時間単位）</h2>
-                <div style="height:200px;"><canvas id="todayBarChart"></canvas></div>
+                <h2>視聴時間推移</h2>
+                <div style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <input type="date" id="trendStartDate" onchange="loadTrend()">
+                    <span>〜</span>
+                    <input type="date" id="trendEndDate" onchange="loadTrend()">
+                </div>
+                <div style="height:200px;"><canvas id="trendChart"></canvas></div>
             </div>
             <div class="card">
-                <h2>今週の視聴状況</h2>
-                <div style="height:200px;"><canvas id="weeklyChart"></canvas></div>
-            </div>
-            <div class="card">
-                <h2>最近の検出ログ</h2>
-                <div id="recentActivity" style="max-height:200px;overflow-y:auto;"></div>
+                <h2>検出ログ</h2>
+                <div id="recentActivity" style="max-height:300px;overflow-y:auto;"></div>
             </div>
         </div>
     </div>
@@ -520,9 +547,10 @@ HTML_TEMPLATE = """
             if (tabId === 'camera') { checkCameraStatus(); loadCaptures(); }
             if (tabId === 'roi') { loadRoiImages(); loadRoiPresets(); }
             if (tabId === 'extract') { populateRoiDropdown('extractRoiSelect'); loadExtractImages(); loadExtractedFaces(); }
-            if (tabId === 'register') { loadUnregisteredFaces(); loadRegisteredFaces(); }
+            if (tabId === 'register') { loadUnregisteredFaces(); loadRegisteredFaces(); loadLabelStatus(); }
             if (tabId === 'recognize') { populateRoiDropdown('recogRoiSelect'); loadRecogImages(); }
-            if (tabId === 'dashboard') { populateRoiDropdown('cfgRoiSelect'); loadDashboard(); loadServiceStatus(); loadConfig(); startDashboardRefresh(); }
+            if (tabId === 'settings') { populateRoiDropdown('cfgRoiSelect'); loadConfig(); }
+            if (tabId === 'dashboard') { initDashboardDates(); loadDashboard(); loadServiceStatus(); startDashboardRefresh(); }
             else { stopDashboardRefresh(); }
         }
 
@@ -852,12 +880,19 @@ HTML_TEMPLATE = """
                     return;
                 }
                 container.innerHTML = data.map(f => `
-                    <div class="face-item">
-                        <img src="/face_image/${f.filename}">
+                    <div class="face-item" style="position:relative;">
+                        <img src="/face_image/${f.filename}" onclick="openFaceModal('${f.filename}')">
                         <span class="badge ${f.label ? 'badge-registered' : 'badge-unregistered'}">${f.label || '未登録'}</span>
+                        <button class="delete-btn" style="display:block;top:-5px;right:-5px;width:20px;height:20px;font-size:12px;line-height:20px;" onclick="event.stopPropagation();deleteFace('${f.filename}')">&times;</button>
                     </div>
                 `).join('');
             });
+        }
+
+        function openFaceModal(filename) {
+            modalImagePath = filename;
+            document.getElementById('modalImage').src = '/face_image/' + filename;
+            document.getElementById('modal').classList.add('active');
         }
 
         // 顔登録
@@ -929,17 +964,24 @@ HTML_TEMPLATE = """
                     container.innerHTML = '<p style="color:#888;">登録済み顔なし</p>';
                     return;
                 }
-                container.innerHTML = Object.entries(data).map(([label, files]) => `
-                    <div class="label-group">
-                        <h4>${label} (${files.length}枚)</h4>
-                        <div>${files.map(f => `
-                            <div class="face-item">
-                                <img src="/face_image/${f}">
-                                <button class="delete-btn" style="display:block;top:-5px;right:-5px;width:20px;height:20px;font-size:12px;line-height:20px;" onclick="deleteFace('${f}')">&times;</button>
-                            </div>
-                        `).join('')}</div>
-                    </div>
-                `).join('');
+                container.innerHTML = Object.entries(data).map(([label, info]) => {
+                    const files = info.files || [];
+                    const encoded = info.encoded;
+                    const statusIcon = encoded ?
+                        '<span style="color:#4ecdc4;margin-left:8px;" title="エンコード済み">&#10003;</span>' :
+                        '<span style="color:#ff6b6b;margin-left:8px;" title="未エンコード">&#9888;</span>';
+                    return `
+                        <div class="label-group">
+                            <h4>${label} (${files.length}枚) ${statusIcon}</h4>
+                            <div>${files.map(f => `
+                                <div class="face-item" style="position:relative;">
+                                    <img src="/face_image/${f}" onclick="openFaceModal('${f}')">
+                                    <button class="delete-btn" style="display:block;top:-5px;right:-5px;width:20px;height:20px;font-size:12px;line-height:20px;" onclick="event.stopPropagation();deleteFace('${f}')">&times;</button>
+                                </div>
+                            `).join('')}</div>
+                        </div>
+                    `;
+                }).join('');
             });
         }
 
@@ -953,6 +995,48 @@ HTML_TEMPLATE = """
                 loadUnregisteredFaces();
                 loadRegisteredFaces();
                 loadExtractedFaces();
+                loadLabelStatus();
+            });
+        }
+
+        // ラベル管理
+        function loadLabelStatus() {
+            fetch('/api/label_status').then(r => r.json()).then(data => {
+                const container = document.getElementById('labelStatus');
+                if (!data.labels || data.labels.length === 0) {
+                    container.innerHTML = '<p style="color:#888;">登録済みラベルなし</p>';
+                    return;
+                }
+                let html = '<div style="display:flex;flex-wrap:wrap;gap:10px;">';
+                data.labels.forEach(label => {
+                    const color = nameColors[label.name] || '#888';
+                    const hasImages = label.count > 0;
+                    html += `<div style="background:#0f3460;padding:10px 15px;border-radius:8px;border-left:3px solid ${color};display:flex;align-items:center;gap:10px;">
+                        <div>
+                            <div style="color:${color};font-weight:bold;">${label.name}</div>
+                            <div style="color:#888;font-size:0.8em;">${label.count}枚</div>
+                        </div>
+                        ${!hasImages ? `<button class="btn btn-danger btn-small" onclick="deleteLabel('${label.name}')" style="padding:5px 10px;font-size:0.8em;">削除</button>` : ''}
+                    </div>`;
+                });
+                html += '</div>';
+                container.innerHTML = html;
+            });
+        }
+
+        function deleteLabel(name) {
+            if (!confirm(`ラベル "${name}" を削除しますか？\\nエンコードデータも削除されます。`)) return;
+            fetch('/api/delete_label', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    loadLabelStatus();
+                    loadRegisteredFaces();
+                } else {
+                    alert('エラー: ' + (data.error || '削除に失敗しました'));
+                }
             });
         }
 
@@ -1042,6 +1126,8 @@ HTML_TEMPLATE = """
         // ダッシュボード
         let dashboardRefreshInterval = null;
         const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888'};
+        let distributionChart = null, trendChart = null;
+        let latestImageFilename = '';
 
         function startDashboardRefresh() {
             if (dashboardRefreshInterval) clearInterval(dashboardRefreshInterval);
@@ -1054,21 +1140,45 @@ HTML_TEMPLATE = """
             if (dashboardRefreshInterval) { clearInterval(dashboardRefreshInterval); dashboardRefreshInterval = null; }
         }
 
-        let todayLineChart = null, todayBarChart = null, weeklyChart = null;
+        function initDashboardDates() {
+            const today = new Date().toISOString().slice(0, 10);
+            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            document.getElementById('distributionDate').value = today;
+            document.getElementById('trendStartDate').value = weekAgo;
+            document.getElementById('trendEndDate').value = today;
+        }
+
+        function updateLatestImage() {
+            if (!latestImageFilename) return;
+            const showRoi = document.getElementById('showRoi').checked;
+            const showBbox = document.getElementById('showBbox').checked;
+            document.getElementById('latestImage').src = `/api/latest_image?roi=${showRoi}&bbox=${showBbox}&t=${Date.now()}`;
+        }
 
         function loadDashboard() {
             fetch('/api/dashboard').then(r => r.json()).then(data => {
                 const today = new Date().toISOString().slice(0, 10);
-                const names = data.target_names || ['mio', 'yu', 'tsubasa'];
+                const names = data.registered_labels || [];
 
+                // 直近の検出画像
+                if (data.latest_image) {
+                    latestImageFilename = data.latest_image;
+                    document.getElementById('latestImage').style.display = 'block';
+                    document.getElementById('noLatestImage').style.display = 'none';
+                    updateLatestImage();
+                } else {
+                    document.getElementById('latestImage').style.display = 'none';
+                    document.getElementById('noLatestImage').style.display = 'block';
+                }
+
+                // 視聴時間（本日・今週）
                 let todayHtml = '';
                 names.forEach(name => {
                     const mins = data.daily[today]?.[name] || 0;
                     const color = nameColors[name] || '#888';
-                    todayHtml += `<div style="background:#0f3460;padding:15px 25px;border-radius:8px;text-align:center;border-left:4px solid ${color};">
-                        <div style="color:${color};font-weight:bold;margin-bottom:5px;">${name}</div>
-                        <div style="font-size:1.8em;font-weight:bold;">${Math.round(mins)}</div>
-                        <div style="color:#888;font-size:0.9em;">分</div>
+                    todayHtml += `<div style="background:#0f3460;padding:10px 15px;border-radius:8px;text-align:center;border-left:3px solid ${color};">
+                        <div style="color:${color};font-weight:bold;font-size:0.9em;">${name}</div>
+                        <div style="font-size:1.5em;font-weight:bold;">${Math.round(mins)}<span style="font-size:0.5em;color:#888;">分</span></div>
                     </div>`;
                 });
                 document.getElementById('todayByLabel').innerHTML = todayHtml || '<p style="color:#888;">データなし</p>';
@@ -1078,87 +1188,77 @@ HTML_TEMPLATE = """
                     let total = 0;
                     Object.values(data.daily).forEach(day => { total += day[name] || 0; });
                     const color = nameColors[name] || '#888';
-                    weekHtml += `<div style="background:#0f3460;padding:15px 25px;border-radius:8px;text-align:center;border-left:4px solid ${color};">
-                        <div style="color:${color};font-weight:bold;margin-bottom:5px;">${name}</div>
-                        <div style="font-size:1.8em;font-weight:bold;">${Math.round(total)}</div>
-                        <div style="color:#888;font-size:0.9em;">分</div>
+                    weekHtml += `<div style="background:#0f3460;padding:10px 15px;border-radius:8px;text-align:center;border-left:3px solid ${color};">
+                        <div style="color:${color};font-weight:bold;font-size:0.9em;">${name}</div>
+                        <div style="font-size:1.5em;font-weight:bold;">${Math.round(total)}<span style="font-size:0.5em;color:#888;">分</span></div>
                     </div>`;
                 });
                 document.getElementById('weekByLabel').innerHTML = weekHtml || '<p style="color:#888;">データなし</p>';
 
-                if (data.recent_images && data.recent_images.length > 0) {
-                    document.getElementById('recentDetections').innerHTML = data.recent_images.slice(0, 5).map(img =>
-                        `<img src="/detection_image/${img}" style="height:100px;border-radius:4px;border:2px solid #333;">`
-                    ).join('');
-                } else {
-                    document.getElementById('recentDetections').innerHTML = '<p style="color:#888;">検出画像なし</p>';
-                }
-
-                if (data.label_images) {
-                    let labelHtml = '';
+                // 検出状況（直近3時間）
+                if (data.detection_3h) {
+                    let html3h = '';
                     names.forEach(name => {
-                        const img = data.label_images[name];
                         const color = nameColors[name] || '#888';
-                        const barcode = data.barcode?.[name] || [];
-                        const barcodeHtml = barcode.map(v => `<div style="width:2px;height:20px;background:${v ? color : '#333'};"></div>`).join('');
-                        labelHtml += `<div style="display:flex;align-items:center;gap:15px;margin-bottom:15px;padding:10px;background:#0f3460;border-radius:8px;">
-                            <div style="width:80px;height:80px;background:#1a1a2e;border-radius:4px;overflow:hidden;flex-shrink:0;">
-                                ${img ? `<img src="/detection_image/${img}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#444;">N/A</div>'}
-                            </div>
-                            <div style="flex:1;">
-                                <div style="color:${color};font-weight:bold;margin-bottom:5px;">${name}</div>
-                                <div style="display:flex;gap:1px;align-items:center;">
-                                    <span style="color:#888;font-size:0.8em;margin-right:5px;">1h前</span>
-                                    ${barcodeHtml}
-                                    <span style="color:#888;font-size:0.8em;margin-left:5px;">now</span>
-                                </div>
+                        const bars = data.detection_3h[name] || [];
+                        const barsHtml = bars.map(v => `<div style="width:2px;height:24px;background:${v ? color : '#333'};"></div>`).join('');
+                        html3h += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;background:#0f3460;border-radius:6px;">
+                            <div style="color:${color};font-weight:bold;width:60px;">${name}</div>
+                            <div style="display:flex;gap:1px;flex:1;align-items:center;">
+                                <span style="color:#666;font-size:0.7em;width:30px;">3h前</span>
+                                ${barsHtml}
+                                <span style="color:#666;font-size:0.7em;width:25px;text-align:right;">now</span>
                             </div>
                         </div>`;
                     });
-                    document.getElementById('labelDetections').innerHTML = labelHtml;
+                    document.getElementById('detection3h').innerHTML = html3h || '<p style="color:#888;">データなし</p>';
                 }
 
-                if (data.today_hourly) {
-                    const hours = Object.keys(data.today_hourly).sort();
-                    const datasets = names.map(name => {
-                        let cumulative = 0;
-                        return {
-                            label: name, data: hours.map(h => { cumulative += data.today_hourly[h]?.[name] || 0; return Math.round(cumulative); }),
-                            borderColor: nameColors[name] || '#888', backgroundColor: 'transparent', tension: 0.3
-                        };
-                    });
-                    if (todayLineChart) todayLineChart.destroy();
-                    todayLineChart = new Chart(document.getElementById('todayLineChart'), {
-                        type: 'line', data: { labels: hours.map(h => h + ':00'), datasets },
-                        options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
-                    });
+                // 検出ログ（同時検出は1レコードにまとめ）
+                const recentHtml = (data.recent_grouped || []).slice(0, 30).map(e => {
+                    const namesHtml = e.names.map(n => `<span style="color:${nameColors[n] || '#888'};margin-left:8px;">${n}</span>`).join('');
+                    return `<div style="padding:6px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;"><span style="color:#888;">${e.timestamp}</span><div>${namesHtml}</div></div>`;
+                }).join('');
+                document.getElementById('recentActivity').innerHTML = recentHtml || '<p style="color:#888;padding:10px;">データなし</p>';
+            });
 
-                    const barDatasets = names.map(name => ({
-                        label: name, data: hours.map(h => Math.round(data.today_hourly[h]?.[name] || 0)), backgroundColor: nameColors[name] || '#888'
-                    }));
-                    if (todayBarChart) todayBarChart.destroy();
-                    todayBarChart = new Chart(document.getElementById('todayBarChart'), {
-                        type: 'bar', data: { labels: hours.map(h => h + ':00'), datasets: barDatasets },
-                        options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } }, y: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
-                    });
-                }
+            loadDistribution();
+            loadTrend();
+        }
 
-                const dates = Object.keys(data.daily).sort();
-                const weekDatasets = names.map(name => ({
+        function loadDistribution() {
+            const date = document.getElementById('distributionDate').value;
+            if (!date) return;
+            fetch(`/api/distribution?date=${date}`).then(r => r.json()).then(data => {
+                const names = data.labels || [];
+                const hours = Array.from({length: 24}, (_, i) => String(i).padStart(2, '0'));
+                const datasets = names.map(name => ({
+                    label: name, data: hours.map(h => Math.round(data.hourly[h]?.[name] || 0)), backgroundColor: nameColors[name] || '#888'
+                }));
+                if (distributionChart) distributionChart.destroy();
+                distributionChart = new Chart(document.getElementById('distributionChart'), {
+                    type: 'bar', data: { labels: hours.map(h => h + ':00'), datasets },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } }, y: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
+                });
+            });
+        }
+
+        function loadTrend() {
+            const start = document.getElementById('trendStartDate').value;
+            const end = document.getElementById('trendEndDate').value;
+            if (!start || !end) return;
+            fetch(`/api/trend?start=${start}&end=${end}`).then(r => r.json()).then(data => {
+                const names = data.labels || [];
+                const dates = data.dates || [];
+                const datasets = names.map(name => ({
                     label: name, data: dates.map(d => Math.round(data.daily[d]?.[name] || 0)),
                     borderColor: nameColors[name] || '#888', backgroundColor: 'transparent', tension: 0.3
                 }));
-                if (weeklyChart) weeklyChart.destroy();
-                weeklyChart = new Chart(document.getElementById('weeklyChart'), {
-                    type: 'line', data: { labels: dates.map(d => d.slice(5)), datasets: weekDatasets },
+                if (trendChart) trendChart.destroy();
+                trendChart = new Chart(document.getElementById('trendChart'), {
+                    type: 'line', data: { labels: dates.map(d => d.slice(5)), datasets },
                     options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                 });
-
-                const recentHtml = data.recent.slice(0, 20).map(e => {
-                    const color = nameColors[e.name] || '#888';
-                    return `<div style="padding:5px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;"><span>${e.timestamp}</span><span style="color:${color};">${e.name}</span></div>`;
-                }).join('');
-                document.getElementById('recentActivity').innerHTML = recentHtml || '<p style="color:#888;padding:10px;">データなし</p>';
             });
         }
 
@@ -1437,7 +1537,26 @@ def registered_faces_by_label():
                     if label not in result:
                         result[label] = []
                     result[label].append(os.path.basename(f))
-    return jsonify(result)
+
+    # エンコーディング状態を確認
+    encoded_labels = set()
+    if os.path.exists(ENCODINGS_PATH):
+        try:
+            with open(ENCODINGS_PATH, 'rb') as f:
+                enc_data = pickle.load(f)
+                encoded_labels = set(enc_data.get('names', []))
+        except:
+            pass
+
+    # 各ラベルのエンコーディング状態を追加
+    result_with_status = {}
+    for label, face_files in result.items():
+        result_with_status[label] = {
+            "files": face_files,
+            "encoded": label in encoded_labels
+        }
+
+    return jsonify(result_with_status)
 
 @app.route("/register_faces", methods=["POST"])
 def register_faces():
@@ -1661,22 +1780,62 @@ LOG_PATH = os.path.expanduser("~/tv_watch_log.csv")
 DETECTIONS_DIR = os.path.expanduser("~/detections")
 os.makedirs(DETECTIONS_DIR, exist_ok=True)
 
+def get_registered_labels():
+    """画像が1枚以上登録されているラベルを取得"""
+    labels = set()
+    if os.path.exists(FACES_DIR):
+        for f in os.listdir(FACES_DIR):
+            if f.endswith('.jpg'):
+                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, 'r') as jf:
+                            data = json.load(jf)
+                            if data.get('label'):
+                                labels.add(data['label'])
+                    except:
+                        pass
+    return list(labels)
+
+def get_first_registered_date():
+    """最初の顔登録日を取得"""
+    earliest = None
+    if os.path.exists(FACES_DIR):
+        for f in os.listdir(FACES_DIR):
+            if f.endswith('.jpg'):
+                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                if os.path.exists(json_path):
+                    try:
+                        mtime = os.path.getmtime(json_path)
+                        if earliest is None or mtime < earliest:
+                            earliest = mtime
+                    except:
+                        pass
+    return datetime.fromtimestamp(earliest) if earliest else None
+
+last_detection_image = None
+last_detection_meta = None
+
 @app.route("/api/dashboard")
 def api_dashboard():
+    global last_detection_image, last_detection_meta
     config = load_config()
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
     interval_sec = config.get("interval_sec", 5)
-    target_names = config.get("target_names", ["mio", "yu", "tsubasa"])
+
+    registered_labels = get_registered_labels()
+    first_registered = get_first_registered_date()
 
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
     cutoff = now - timedelta(days=7)
-    one_hour_ago = now - timedelta(hours=1)
+    three_hours_ago = now - timedelta(hours=3)
 
     daily_minutes = defaultdict(lambda: defaultdict(float))
-    today_hourly = defaultdict(lambda: defaultdict(float))
-    recent_entries = []
-    barcode = {name: [False] * 60 for name in target_names}
+    recent_grouped = []
+    detection_3h = {name: [False] * 180 for name in registered_labels}  # 3時間 = 180分
+
+    current_group = None
 
     if os.path.exists(log_path):
         try:
@@ -1686,48 +1845,287 @@ def api_dashboard():
                     try:
                         ts = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
                         name = row["name"]
+
+                        # 登録前のデータは無視
+                        if first_registered and ts < first_registered:
+                            continue
                         if ts < cutoff:
                             continue
-                        if name in target_names:
-                            date_str = ts.strftime("%Y-%m-%d")
-                            daily_minutes[date_str][name] += interval_sec / 60.0
-                            if date_str == today_str:
-                                hour_str = ts.strftime("%H")
-                                today_hourly[hour_str][name] += interval_sec / 60.0
-                            if ts >= one_hour_ago:
-                                minute_idx = int((ts - one_hour_ago).total_seconds() / 60)
-                                if 0 <= minute_idx < 60:
-                                    barcode[name][minute_idx] = True
-                        recent_entries.append({"timestamp": row["timestamp"], "name": name})
+
+                        # 登録済みラベルのみ
+                        if name not in registered_labels:
+                            continue
+
+                        date_str = ts.strftime("%Y-%m-%d")
+                        daily_minutes[date_str][name] += interval_sec / 60.0
+
+                        # 直近3時間のバーコード
+                        if ts >= three_hours_ago:
+                            minute_idx = int((ts - three_hours_ago).total_seconds() / 60)
+                            if 0 <= minute_idx < 180:
+                                detection_3h[name][minute_idx] = True
+
+                        # 検出ログのグループ化（同じ秒は1レコード）
+                        ts_key = row["timestamp"]
+                        if current_group and current_group["timestamp"] == ts_key:
+                            if name not in current_group["names"]:
+                                current_group["names"].append(name)
+                        else:
+                            if current_group:
+                                recent_grouped.append(current_group)
+                            current_group = {"timestamp": ts_key, "names": [name]}
+                    except:
+                        continue
+                if current_group:
+                    recent_grouped.append(current_group)
+        except:
+            pass
+
+    recent_grouped = recent_grouped[-50:][::-1]
+
+    # 直近の検出画像
+    latest_image = None
+    if os.path.exists(DETECTIONS_DIR):
+        all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
+        if all_images:
+            latest_image = os.path.basename(all_images[0])
+            last_detection_image = all_images[0]
+            # メタデータを読み込み
+            meta_path = all_images[0].replace('.jpg', '.json')
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, 'r') as f:
+                        last_detection_meta = json.load(f)
+                except:
+                    last_detection_meta = None
+
+    return jsonify({
+        "daily": {k: dict(v) for k, v in daily_minutes.items()},
+        "registered_labels": registered_labels,
+        "latest_image": latest_image,
+        "detection_3h": detection_3h,
+        "recent_grouped": recent_grouped
+    })
+
+@app.route("/api/latest_image")
+def api_latest_image():
+    """直近検出画像をROI/BBox表示切替で返す"""
+    show_roi = request.args.get('roi', 'true').lower() == 'true'
+    show_bbox = request.args.get('bbox', 'true').lower() == 'true'
+
+    if not last_detection_image or not os.path.exists(last_detection_image):
+        return "Not found", 404
+
+    img = cv2.imread(last_detection_image)
+    if img is None:
+        return "Failed to load", 500
+
+    config = load_config()
+
+    # BBox描画
+    if show_bbox and last_detection_meta:
+        faces = last_detection_meta.get('faces', [])
+        for face in faces:
+            name = face.get('name', 'unknown')
+            loc = face.get('location', {})
+            if loc:
+                color = (0, 255, 0) if name != 'unknown' else (0, 0, 255)
+                cv2.rectangle(img, (loc.get('left', 0), loc.get('top', 0)),
+                             (loc.get('right', 0), loc.get('bottom', 0)), color, 2)
+                cv2.putText(img, name, (loc.get('left', 0), loc.get('top', 0) - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+    # ROI描画
+    if show_roi:
+        roi_index = config.get('roi_index')
+        roi = get_roi_by_index(roi_index)
+        if roi:
+            cv2.rectangle(img, (roi['x'], roi['y']), (roi['x']+roi['w'], roi['y']+roi['h']), (0, 212, 255), 2)
+
+    _, jpeg = cv2.imencode('.jpg', img)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/api/distribution")
+def api_distribution():
+    """指定日の時間帯別視聴時間"""
+    date = request.args.get('date')
+    if not date:
+        return jsonify({"error": "date required"})
+
+    config = load_config()
+    log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
+    interval_sec = config.get("interval_sec", 5)
+    registered_labels = get_registered_labels()
+    first_registered = get_first_registered_date()
+
+    hourly = defaultdict(lambda: defaultdict(float))
+
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        ts = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+                        if first_registered and ts < first_registered:
+                            continue
+                        name = row["name"]
+                        if name not in registered_labels:
+                            continue
+                        date_str = ts.strftime("%Y-%m-%d")
+                        if date_str == date:
+                            hour_str = ts.strftime("%H")
+                            hourly[hour_str][name] += interval_sec / 60.0
                     except:
                         continue
         except:
             pass
 
-    recent_entries = recent_entries[-50:][::-1]
+    return jsonify({
+        "date": date,
+        "hourly": {k: dict(v) for k, v in hourly.items()},
+        "labels": registered_labels
+    })
 
-    recent_images = []
-    label_images = {name: None for name in target_names}
-    if os.path.exists(DETECTIONS_DIR):
-        all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
-        recent_images = [os.path.basename(f) for f in all_images[:5]]
-        for img_path in all_images:
-            filename = os.path.basename(img_path)
-            parts = filename.replace(".jpg", "").split("_")
-            if len(parts) >= 3:
-                label = parts[-1]
-                if label in target_names and label_images[label] is None:
-                    label_images[label] = filename
+@app.route("/api/trend")
+def api_trend():
+    """期間指定の日別視聴時間推移"""
+    start = request.args.get('start')
+    end = request.args.get('end')
+    if not start or not end:
+        return jsonify({"error": "start and end required"})
+
+    config = load_config()
+    log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
+    interval_sec = config.get("interval_sec", 5)
+    registered_labels = get_registered_labels()
+    first_registered = get_first_registered_date()
+
+    try:
+        start_date = datetime.strptime(start, "%Y-%m-%d")
+        end_date = datetime.strptime(end, "%Y-%m-%d")
+    except:
+        return jsonify({"error": "invalid date format"})
+
+    daily = defaultdict(lambda: defaultdict(float))
+
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        ts = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+                        if first_registered and ts < first_registered:
+                            continue
+                        name = row["name"]
+                        if name not in registered_labels:
+                            continue
+                        date_str = ts.strftime("%Y-%m-%d")
+                        row_date = datetime.strptime(date_str, "%Y-%m-%d")
+                        if start_date <= row_date <= end_date:
+                            daily[date_str][name] += interval_sec / 60.0
+                    except:
+                        continue
+        except:
+            pass
+
+    # 日付リストを生成
+    dates = []
+    current = start_date
+    while current <= end_date:
+        dates.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
 
     return jsonify({
-        "daily": {k: dict(v) for k, v in daily_minutes.items()},
-        "today_hourly": {k: dict(v) for k, v in today_hourly.items()},
-        "recent": recent_entries,
-        "target_names": target_names,
-        "recent_images": recent_images,
-        "label_images": label_images,
-        "barcode": barcode
+        "start": start,
+        "end": end,
+        "dates": dates,
+        "daily": {k: dict(v) for k, v in daily.items()},
+        "labels": registered_labels
     })
+
+@app.route("/api/label_status")
+def api_label_status():
+    """ラベル管理用：各ラベルの画像数"""
+    labels = {}
+
+    # エンコードファイルからラベル一覧を取得
+    if os.path.exists(ENCODINGS_PATH):
+        try:
+            with open(ENCODINGS_PATH, 'rb') as f:
+                enc_data = pickle.load(f)
+                for name in enc_data.get('names', []):
+                    if name not in labels:
+                        labels[name] = 0
+        except:
+            pass
+
+    # 画像ファイルからラベルごとの画像数をカウント
+    if os.path.exists(FACES_DIR):
+        for f in os.listdir(FACES_DIR):
+            if f.endswith('.jpg'):
+                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, 'r') as jf:
+                            data = json.load(jf)
+                            label = data.get('label')
+                            if label:
+                                labels[label] = labels.get(label, 0) + 1
+                    except:
+                        pass
+
+    result = [{"name": name, "count": count} for name, count in sorted(labels.items())]
+    return jsonify({"labels": result})
+
+@app.route("/api/delete_label", methods=["POST"])
+def api_delete_label():
+    """画像未登録のラベルを削除"""
+    name = request.json.get('name')
+    if not name:
+        return jsonify({"success": False, "error": "name required"})
+
+    # 画像があるか確認
+    has_images = False
+    if os.path.exists(FACES_DIR):
+        for f in os.listdir(FACES_DIR):
+            if f.endswith('.jpg'):
+                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, 'r') as jf:
+                            data = json.load(jf)
+                            if data.get('label') == name:
+                                has_images = True
+                                break
+                    except:
+                        pass
+
+    if has_images:
+        return jsonify({"success": False, "error": "このラベルには画像が登録されています"})
+
+    # エンコードファイルからラベルを削除
+    if os.path.exists(ENCODINGS_PATH):
+        try:
+            with open(ENCODINGS_PATH, 'rb') as f:
+                enc_data = pickle.load(f)
+
+            new_encodings = []
+            new_names = []
+            for enc, n in zip(enc_data.get('encodings', []), enc_data.get('names', [])):
+                if n != name:
+                    new_encodings.append(enc)
+                    new_names.append(n)
+
+            with open(ENCODINGS_PATH, 'wb') as f:
+                pickle.dump({'encodings': new_encodings, 'names': new_names}, f)
+
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)})
+
+    return jsonify({"success": True})
 
 @app.route("/detection_image/<filename>")
 def detection_image(filename):
