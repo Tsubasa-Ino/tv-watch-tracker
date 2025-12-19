@@ -28,8 +28,11 @@ def load_config():
         "camera_device": 0,
         "interval_sec": 5,
         "tolerance": 0.5,
-        "face_model": "cnn",
-        "upsample": 0,
+        "face_model": "hog",
+        "upsample": 2,
+        "resize_width": 640,
+        "roi": None,  # {"x": 0, "y": 0, "w": 100, "h": 100} in percent
+        "use_roi": True,
         "encodings_path": "~/encodings.pkl",
         "log_path": "~/tv_watch_log.csv",
         "camera_retry_sec": 5,
@@ -126,8 +129,14 @@ def main():
     TOLERANCE = config["tolerance"]
     FACE_MODEL = config["face_model"]
     UPSAMPLE = config["upsample"]
+    RESIZE_WIDTH = config.get("resize_width", 640)
+    ROI = config.get("roi")
+    USE_ROI = config.get("use_roi", True)
     CAMERA_RETRY_SEC = config["camera_retry_sec"]
     MAX_CAMERA_RETRIES = config["max_camera_retries"]
+
+    logger.info("検出設定: model=%s, upsample=%d, resize=%d, ROI=%s",
+                FACE_MODEL, UPSAMPLE, RESIZE_WIDTH, "有効" if (USE_ROI and ROI) else "無効")
 
     # 顔エンコーディング読み込み
     known_names, known_encodings = load_encodings(ENC_PATH)
@@ -165,6 +174,21 @@ def main():
             consecutive_failures = 0
 
             try:
+                # ROI適用（ピクセル値）
+                if USE_ROI and ROI:
+                    x1 = ROI["x"]
+                    y1 = ROI["y"]
+                    x2 = x1 + ROI["w"]
+                    y2 = y1 + ROI["h"]
+                    frame = frame[y1:y2, x1:x2]
+
+                # 縮小処理（メモリ節約）
+                if RESIZE_WIDTH and RESIZE_WIDTH > 0:
+                    h, w = frame.shape[:2]
+                    if w > RESIZE_WIDTH:
+                        scale = RESIZE_WIDTH / w
+                        frame = cv2.resize(frame, (RESIZE_WIDTH, int(h * scale)))
+
                 # BGR -> RGB 変換
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
