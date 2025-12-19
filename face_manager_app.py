@@ -476,6 +476,7 @@ HTML_TEMPLATE = """
 
         // タブ切り替え
         function showTab(tabId) {
+            currentTab = tabId;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelector(`.tab[onclick="showTab('${tabId}')"]`).classList.add('active');
@@ -486,7 +487,8 @@ HTML_TEMPLATE = """
             if (tabId === 'detect') loadDetectImages();
             if (tabId === 'register') loadRegisterImages();
             if (tabId === 'faces') { loadLabeledFaces(); }
-            if (tabId === 'dashboard') { loadDashboard(); loadServiceStatus(); loadConfig(); }
+            if (tabId === 'dashboard') { loadDashboard(); loadServiceStatus(); loadConfig(); startDashboardRefresh(); }
+            else { stopDashboardRefresh(); }
         }
 
         // カメラ状態チェック
@@ -1025,7 +1027,28 @@ HTML_TEMPLATE = """
 
         // ダッシュボード
         let dashboardChart = null;
+        let dashboardRefreshInterval = null;
+        let currentTab = 'camera';
         const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888', 'none': '#444'};
+
+        // ダッシュボード自動更新開始
+        function startDashboardRefresh() {
+            if (dashboardRefreshInterval) clearInterval(dashboardRefreshInterval);
+            dashboardRefreshInterval = setInterval(() => {
+                if (currentTab === 'dashboard') {
+                    loadDashboard();
+                    loadServiceStatus();
+                }
+            }, 10000); // 10秒間隔
+        }
+
+        // ダッシュボード自動更新停止
+        function stopDashboardRefresh() {
+            if (dashboardRefreshInterval) {
+                clearInterval(dashboardRefreshInterval);
+                dashboardRefreshInterval = null;
+            }
+        }
 
         function loadDashboard() {
             fetch('/api/dashboard').then(r => r.json()).then(data => {
