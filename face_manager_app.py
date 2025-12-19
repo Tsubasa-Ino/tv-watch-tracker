@@ -244,8 +244,8 @@ HTML_TEMPLATE = """
         <button class="tab" onclick="showTab('roi')">ROI設定</button>
         <button class="tab" onclick="showTab('extract')">顔抽出</button>
         <button class="tab" onclick="showTab('register')">顔登録</button>
-        <button class="tab" onclick="showTab('recognize')">顔認識テスト</button>
-        <button class="tab" onclick="showTab('settings')">顔認識設定</button>
+        <button class="tab" onclick="showTab('test')">テスト</button>
+        <button class="tab" onclick="showTab('settings')">パラメータ設定</button>
         <button class="tab" onclick="showTab('dashboard')">ダッシュボード</button>
     </div>
     <div class="content">
@@ -368,11 +368,80 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- 顔認識テストタブ -->
-        <div id="recognize" class="tab-content">
-            <div class="card">
+        <!-- テストタブ -->
+        <div id="test" class="tab-content">
+            <!-- テスト種別選択 -->
+            <div style="display:flex;gap:10px;margin-bottom:15px;">
+                <button class="btn btn-secondary" id="testTypeDetect" onclick="switchTestType('detect')" style="flex:1;">顔検出</button>
+                <button class="btn btn-secondary" id="testTypeRecog" onclick="switchTestType('recog')" style="flex:1;">顔認識</button>
+                <button class="btn btn-primary" id="testTypeAll" onclick="switchTestType('all')" style="flex:1;">総合テスト</button>
+            </div>
+
+            <!-- 顔検出テスト -->
+            <div id="testDetect" class="card" style="display:none;">
+                <h2>顔検出テスト</h2>
+                <p style="color:#888;margin-bottom:15px;">カメラ画像から顔を検出しBBoxを表示</p>
+                <div class="params">
+                    <div class="form-group">
+                        <label>検出モデル</label>
+                        <select id="detectModel">
+                            <option value="hog">HOG（軽量）</option>
+                            <option value="cnn">CNN（高精度）</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Upsample</label>
+                        <select id="detectUpsample">
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2" selected>2</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>ROI選択</label>
+                        <select id="detectRoiSelect" onchange="loadDetectImages()">
+                            <option value="">使用しない</option>
+                        </select>
+                    </div>
+                </div>
+                <h3>テスト画像を選択</h3>
+                <div class="grid" id="detectImageGrid"></div>
+                <input type="hidden" id="detectImage" value="">
+                <div style="margin-top:15px;">
+                    <button class="btn btn-primary" onclick="runDetection()">顔検出実行</button>
+                </div>
+                <div id="detectStatus"></div>
+                <div id="detectResult" style="margin-top:15px;text-align:center;"></div>
+            </div>
+
+            <!-- 顔認識テスト -->
+            <div id="testRecog" class="card" style="display:none;">
                 <h2>顔認識テスト</h2>
-                <p style="color:#888;margin-bottom:15px;">既存画像で顔認識（誰か判定）をテスト</p>
+                <p style="color:#888;margin-bottom:15px;">抽出済みの顔画像から誰か判定</p>
+                <div class="params">
+                    <div class="form-group">
+                        <label>許容度</label>
+                        <select id="recogOnlyTolerance">
+                            <option value="0.4">0.4（厳密）</option>
+                            <option value="0.5" selected>0.5（標準）</option>
+                            <option value="0.6">0.6（緩め）</option>
+                        </select>
+                    </div>
+                </div>
+                <h3>顔画像を選択</h3>
+                <div id="recogFaceGrid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+                <input type="hidden" id="recogFaceFile" value="">
+                <div style="margin-top:15px;">
+                    <button class="btn btn-primary" onclick="runRecogOnly()">顔認識実行</button>
+                </div>
+                <div id="recogOnlyStatus"></div>
+                <div id="recogOnlyResult" style="margin-top:15px;"></div>
+            </div>
+
+            <!-- 総合テスト -->
+            <div id="testAll" class="card">
+                <h2>総合テスト</h2>
+                <p style="color:#888;margin-bottom:15px;">カメラ画像から顔検出＋認識を実行</p>
                 <div class="params">
                     <div class="form-group">
                         <label>検出モデル</label>
@@ -408,7 +477,7 @@ HTML_TEMPLATE = """
                 <div class="grid" id="recogImageGrid"></div>
                 <input type="hidden" id="recogImage" value="">
                 <div style="margin-top:15px;">
-                    <button class="btn btn-primary" onclick="runRecognition()">顔認識実行</button>
+                    <button class="btn btn-primary" onclick="runRecognition()">総合テスト実行</button>
                 </div>
                 <div id="recogStatus"></div>
                 <div class="detection-result" id="recogResult"></div>
@@ -469,14 +538,13 @@ HTML_TEMPLATE = """
         <!-- ダッシュボードタブ -->
         <div id="dashboard" class="tab-content">
             <div class="card">
-                <h2>直近の検出画像</h2>
+                <h2>直近の画像</h2>
                 <div style="margin-bottom:10px;">
-                    <label style="margin-right:15px;"><input type="checkbox" id="showRoi" checked onchange="updateLatestImage()"> ROI表示</label>
-                    <label><input type="checkbox" id="showBbox" checked onchange="updateLatestImage()"> BBox表示</label>
+                    <label><input type="checkbox" id="showRoi" checked onchange="updateLatestImage()"> ROI表示</label>
                 </div>
                 <div id="latestImageContainer" style="text-align:center;">
                     <img id="latestImage" src="" style="max-width:100%;border-radius:8px;display:none;">
-                    <p id="noLatestImage" style="color:#888;">検出画像なし</p>
+                    <p id="noLatestImage" style="color:#888;">画像なし</p>
                 </div>
             </div>
             <div class="card">
@@ -548,7 +616,7 @@ HTML_TEMPLATE = """
             if (tabId === 'roi') { loadRoiImages(); loadRoiPresets(); }
             if (tabId === 'extract') { populateRoiDropdown('extractRoiSelect'); loadExtractImages(); loadExtractedFaces(); }
             if (tabId === 'register') { loadUnregisteredFaces(); loadRegisteredFaces(); loadLabelStatus(); }
-            if (tabId === 'recognize') { populateRoiDropdown('recogRoiSelect'); loadRecogImages(); }
+            if (tabId === 'test') { initTestTab(); }
             if (tabId === 'settings') { populateRoiDropdown('cfgRoiSelect'); loadConfig(); }
             if (tabId === 'dashboard') { initDashboardDates(); loadDashboard(); loadServiceStatus(); startDashboardRefresh(); }
             else { stopDashboardRefresh(); }
@@ -1040,7 +1108,128 @@ HTML_TEMPLATE = """
             });
         }
 
-        // 顔認識テスト
+        // テストタブ
+        let currentTestType = 'all';
+
+        function initTestTab() {
+            switchTestType('all');
+            populateRoiDropdown('detectRoiSelect');
+            populateRoiDropdown('recogRoiSelect');
+        }
+
+        function switchTestType(type) {
+            currentTestType = type;
+            document.getElementById('testDetect').style.display = type === 'detect' ? 'block' : 'none';
+            document.getElementById('testRecog').style.display = type === 'recog' ? 'block' : 'none';
+            document.getElementById('testAll').style.display = type === 'all' ? 'block' : 'none';
+            document.getElementById('testTypeDetect').className = 'btn ' + (type === 'detect' ? 'btn-primary' : 'btn-secondary');
+            document.getElementById('testTypeRecog').className = 'btn ' + (type === 'recog' ? 'btn-primary' : 'btn-secondary');
+            document.getElementById('testTypeAll').className = 'btn ' + (type === 'all' ? 'btn-primary' : 'btn-secondary');
+            if (type === 'detect') loadDetectImages();
+            if (type === 'recog') loadRecogFaces();
+            if (type === 'all') loadRecogImages();
+        }
+
+        // 顔検出テスト
+        function loadDetectImages() {
+            const roiIndex = document.getElementById('detectRoiSelect').value;
+            fetch('/captures').then(r => r.json()).then(data => {
+                const grid = document.getElementById('detectImageGrid');
+                if (data.length === 0) {
+                    grid.innerHTML = '<p style="color:#888;">撮影画像なし</p>';
+                    return;
+                }
+                grid.innerHTML = data.map(f => `
+                    <div class="grid-item" onclick="selectDetectImage('${f}', this)">
+                        <img src="/thumbnail_roi/${f}?roi_index=${roiIndex}&${Date.now()}">
+                        <div class="filename">${f}</div>
+                    </div>
+                `).join('');
+            });
+        }
+
+        function selectDetectImage(filename, element) {
+            document.querySelectorAll('#detectImageGrid .grid-item').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            document.getElementById('detectImage').value = filename;
+        }
+
+        function runDetection() {
+            const image = document.getElementById('detectImage').value;
+            const model = document.getElementById('detectModel').value;
+            const upsample = document.getElementById('detectUpsample').value;
+            const roiIndex = document.getElementById('detectRoiSelect').value;
+            if (!image) { alert('画像を選択してください'); return; }
+            showStatus('detectStatus', '検出中...', 'info');
+
+            fetch('/detect_only', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({image, model, upsample: parseInt(upsample), roi_index: roiIndex})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    showStatus('detectStatus', `検出完了: ${data.count}人検出 (${data.time}秒)`, 'success');
+                    document.getElementById('detectResult').innerHTML = `<img src="/detect_result?${Date.now()}" style="max-width:100%;border-radius:8px;">`;
+                } else {
+                    showStatus('detectStatus', 'エラー: ' + data.error, 'error');
+                }
+            });
+        }
+
+        // 顔認識テスト（顔画像入力）
+        function loadRecogFaces() {
+            fetch('/all_faces_status').then(r => r.json()).then(data => {
+                const grid = document.getElementById('recogFaceGrid');
+                if (data.length === 0) {
+                    grid.innerHTML = '<p style="color:#888;">抽出済み顔なし</p>';
+                    return;
+                }
+                grid.innerHTML = data.map(f => `
+                    <div class="face-item" onclick="selectRecogFace('${f.filename}', this)">
+                        <img src="/face_image/${f.filename}">
+                        <span class="badge ${f.label ? 'badge-registered' : 'badge-unregistered'}">${f.label || '未登録'}</span>
+                    </div>
+                `).join('');
+            });
+        }
+
+        function selectRecogFace(filename, element) {
+            document.querySelectorAll('#recogFaceGrid .face-item').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            document.getElementById('recogFaceFile').value = filename;
+        }
+
+        function runRecogOnly() {
+            const faceFile = document.getElementById('recogFaceFile').value;
+            const tolerance = document.getElementById('recogOnlyTolerance').value;
+            if (!faceFile) { alert('顔画像を選択してください'); return; }
+            showStatus('recogOnlyStatus', '認識中...', 'info');
+
+            fetch('/recognize_face', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({face_file: faceFile, tolerance: parseFloat(tolerance)})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    const color = nameColors[data.name] || '#888';
+                    const similarity = Math.max(0, (1 - data.distance) * 100).toFixed(1);
+                    showStatus('recogOnlyStatus', '認識完了', 'success');
+                    document.getElementById('recogOnlyResult').innerHTML = `
+                        <div style="display:flex;align-items:center;gap:20px;background:#0f3460;padding:20px;border-radius:8px;">
+                            <img src="/face_image/${faceFile}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">
+                            <div>
+                                <div style="font-size:1.5em;font-weight:bold;color:${color};margin-bottom:5px;">${data.name}</div>
+                                <div style="color:#888;">類似度: ${similarity}%</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    showStatus('recogOnlyStatus', 'エラー: ' + data.error, 'error');
+                }
+            });
+        }
+
+        // 総合テスト（既存の顔認識テスト）
         function loadRecogImages() {
             const roiIndex = document.getElementById('recogRoiSelect').value;
             fetch('/captures').then(r => r.json()).then(data => {
@@ -1151,8 +1340,7 @@ HTML_TEMPLATE = """
         function updateLatestImage() {
             if (!latestImageFilename) return;
             const showRoi = document.getElementById('showRoi').checked;
-            const showBbox = document.getElementById('showBbox').checked;
-            document.getElementById('latestImage').src = `/api/latest_image?roi=${showRoi}&bbox=${showBbox}&t=${Date.now()}`;
+            document.getElementById('latestImage').src = `/api/latest_image?roi=${showRoi}&t=${Date.now()}`;
         }
 
         function loadDashboard() {
@@ -1195,12 +1383,23 @@ HTML_TEMPLATE = """
                 });
                 document.getElementById('weekByLabel').innerHTML = weekHtml || '<p style="color:#888;">データなし</p>';
 
-                // 検出状況（直近3時間）
-                if (data.detection_3h) {
-                    let html3h = '';
+                // 検出状況（直近3時間）- データがなくても構造を表示
+                let html3h = '';
+                if (names.length === 0) {
+                    // 登録者がいない場合も空のバーコードエリアを表示
+                    const emptyBars = Array(180).fill(0).map(() => '<div style="width:2px;height:24px;background:#333;"></div>').join('');
+                    html3h = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;background:#0f3460;border-radius:6px;">
+                        <div style="color:#888;font-weight:bold;width:60px;">-</div>
+                        <div style="display:flex;gap:1px;flex:1;align-items:center;">
+                            <span style="color:#666;font-size:0.7em;width:30px;">3h前</span>
+                            ${emptyBars}
+                            <span style="color:#666;font-size:0.7em;width:25px;text-align:right;">now</span>
+                        </div>
+                    </div>`;
+                } else {
                     names.forEach(name => {
                         const color = nameColors[name] || '#888';
-                        const bars = data.detection_3h[name] || [];
+                        const bars = data.detection_3h?.[name] || Array(180).fill(false);
                         const barsHtml = bars.map(v => `<div style="width:2px;height:24px;background:${v ? color : '#333'};"></div>`).join('');
                         html3h += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;background:#0f3460;border-radius:6px;">
                             <div style="color:${color};font-weight:bold;width:60px;">${name}</div>
@@ -1211,8 +1410,8 @@ HTML_TEMPLATE = """
                             </div>
                         </div>`;
                     });
-                    document.getElementById('detection3h').innerHTML = html3h || '<p style="color:#888;">データなし</p>';
                 }
+                document.getElementById('detection3h').innerHTML = html3h;
 
                 // 検出ログ（同時検出は1レコードにまとめ）
                 const recentHtml = (data.recent_grouped || []).slice(0, 30).map(e => {
@@ -1664,9 +1863,104 @@ def delete_face():
         os.remove(meta_path)
     return jsonify({"success": True})
 
-# 顔認識テスト
+# テスト機能
 last_recog_result = None
 last_recog_faces = []
+last_detect_result = None
+
+@app.route("/detect_only", methods=["POST"])
+def detect_only():
+    """顔検出のみ（認識なし）"""
+    global last_detect_result
+    data = request.json
+    image = data.get("image")
+    model = data.get("model", "hog")
+    upsample = data.get("upsample", 2)
+    roi_index = data.get("roi_index", "")
+
+    path = os.path.join(CAPTURES_DIR, image)
+    if not os.path.exists(path):
+        return jsonify({"success": False, "error": "画像が見つかりません"})
+
+    img = cv2.imread(path)
+    roi = get_roi_by_index(roi_index)
+
+    if roi:
+        x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
+        img_roi = img[y:y+rh, x:x+rw]
+        roi_offset = (x, y)
+    else:
+        img_roi = img
+        roi_offset = (0, 0)
+
+    rgb = cv2.cvtColor(img_roi, cv2.COLOR_BGR2RGB)
+
+    start = time.time()
+    face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
+    elapsed = round(time.time() - start, 2)
+
+    for (top, right, bottom, left) in face_locations:
+        orig_top = top + roi_offset[1]
+        orig_right = right + roi_offset[0]
+        orig_bottom = bottom + roi_offset[1]
+        orig_left = left + roi_offset[0]
+        cv2.rectangle(img, (orig_left, orig_top), (orig_right, orig_bottom), (0, 255, 0), 2)
+
+    if roi:
+        cv2.rectangle(img, (roi["x"], roi["y"]), (roi["x"]+roi["w"], roi["y"]+roi["h"]), (0, 212, 255), 2)
+
+    last_detect_result = img
+
+    return jsonify({"success": True, "count": len(face_locations), "time": elapsed})
+
+@app.route("/detect_result")
+def detect_result():
+    if last_detect_result is None:
+        return "No result", 404
+    _, jpeg = cv2.imencode('.jpg', last_detect_result)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/recognize_face", methods=["POST"])
+def recognize_face():
+    """単一顔画像の認識"""
+    data = request.json
+    face_file = data.get("face_file")
+    tolerance = data.get("tolerance", 0.5)
+
+    path = os.path.join(FACES_DIR, face_file)
+    if not os.path.exists(path):
+        return jsonify({"success": False, "error": "顔画像が見つかりません"})
+
+    if not os.path.exists(ENCODINGS_PATH):
+        return jsonify({"success": False, "error": "エンコーディングファイルがありません"})
+
+    try:
+        with open(ENCODINGS_PATH, "rb") as f:
+            enc_data = pickle.load(f)
+        known_names = enc_data.get("names", [])
+        known_encodings = enc_data.get("encodings", [])
+        if not known_names:
+            return jsonify({"success": False, "error": "登録された顔がありません"})
+    except:
+        return jsonify({"success": False, "error": "エンコーディングの読み込みに失敗しました"})
+
+    img = face_recognition.load_image_file(path)
+    encodings = face_recognition.face_encodings(img)
+
+    if len(encodings) == 0:
+        return jsonify({"success": False, "error": "顔が検出できませんでした"})
+
+    enc = encodings[0]
+    distances = face_recognition.face_distance(known_encodings, enc)
+
+    if len(distances) == 0:
+        return jsonify({"success": True, "name": "unknown", "distance": 1.0})
+
+    min_idx = distances.argmin()
+    min_distance = distances[min_idx]
+    name = known_names[min_idx] if min_distance <= tolerance else "unknown"
+
+    return jsonify({"success": True, "name": name, "distance": float(min_distance)})
 
 @app.route("/recognize", methods=["POST"])
 def recognize():
@@ -1883,21 +2177,14 @@ def api_dashboard():
 
     recent_grouped = recent_grouped[-50:][::-1]
 
-    # 直近の検出画像
+    # 直近の画像（capturesフォルダから）
     latest_image = None
-    if os.path.exists(DETECTIONS_DIR):
-        all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
+    if os.path.exists(CAPTURES_DIR):
+        all_images = sorted(glob.glob(os.path.join(CAPTURES_DIR, "*.jpg")), reverse=True)
         if all_images:
             latest_image = os.path.basename(all_images[0])
             last_detection_image = all_images[0]
-            # メタデータを読み込み
-            meta_path = all_images[0].replace('.jpg', '.json')
-            if os.path.exists(meta_path):
-                try:
-                    with open(meta_path, 'r') as f:
-                        last_detection_meta = json.load(f)
-                except:
-                    last_detection_meta = None
+            last_detection_meta = None  # capturesにはメタデータなし
 
     return jsonify({
         "daily": {k: dict(v) for k, v in daily_minutes.items()},
@@ -1909,9 +2196,8 @@ def api_dashboard():
 
 @app.route("/api/latest_image")
 def api_latest_image():
-    """直近検出画像をROI/BBox表示切替で返す"""
+    """直近画像をROI表示切替で返す"""
     show_roi = request.args.get('roi', 'true').lower() == 'true'
-    show_bbox = request.args.get('bbox', 'true').lower() == 'true'
 
     if not last_detection_image or not os.path.exists(last_detection_image):
         return "Not found", 404
@@ -1921,19 +2207,6 @@ def api_latest_image():
         return "Failed to load", 500
 
     config = load_config()
-
-    # BBox描画
-    if show_bbox and last_detection_meta:
-        faces = last_detection_meta.get('faces', [])
-        for face in faces:
-            name = face.get('name', 'unknown')
-            loc = face.get('location', {})
-            if loc:
-                color = (0, 255, 0) if name != 'unknown' else (0, 0, 255)
-                cv2.rectangle(img, (loc.get('left', 0), loc.get('top', 0)),
-                             (loc.get('right', 0), loc.get('bottom', 0)), color, 2)
-                cv2.putText(img, name, (loc.get('left', 0), loc.get('top', 0) - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     # ROI描画
     if show_roi:
@@ -1956,7 +2229,6 @@ def api_distribution():
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
     interval_sec = config.get("interval_sec", 5)
     registered_labels = get_registered_labels()
-    first_registered = get_first_registered_date()
 
     hourly = defaultdict(lambda: defaultdict(float))
 
@@ -1967,8 +2239,6 @@ def api_distribution():
                 for row in reader:
                     try:
                         ts = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
-                        if first_registered and ts < first_registered:
-                            continue
                         name = row["name"]
                         if name not in registered_labels:
                             continue
@@ -1999,7 +2269,6 @@ def api_trend():
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
     interval_sec = config.get("interval_sec", 5)
     registered_labels = get_registered_labels()
-    first_registered = get_first_registered_date()
 
     try:
         start_date = datetime.strptime(start, "%Y-%m-%d")
@@ -2016,8 +2285,6 @@ def api_trend():
                 for row in reader:
                     try:
                         ts = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
-                        if first_registered and ts < first_registered:
-                            continue
                         name = row["name"]
                         if name not in registered_labels:
                             continue
