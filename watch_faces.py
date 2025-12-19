@@ -37,6 +37,9 @@ def load_config():
         "log_path": "~/tv_watch_log.csv",
         "camera_retry_sec": 5,
         "max_camera_retries": 10,
+        "save_detections": True,
+        "detections_dir": "~/detections",
+        "max_detection_images": 100,
     }
     if os.path.exists(CONFIG_PATH):
         try:
@@ -134,6 +137,13 @@ def main():
     USE_ROI = config.get("use_roi", True)
     CAMERA_RETRY_SEC = config["camera_retry_sec"]
     MAX_CAMERA_RETRIES = config["max_camera_retries"]
+    SAVE_DETECTIONS = config.get("save_detections", True)
+    DETECTIONS_DIR = os.path.expanduser(config.get("detections_dir", "~/detections"))
+    MAX_DETECTION_IMAGES = config.get("max_detection_images", 100)
+
+    # 検出画像保存ディレクトリ作成
+    if SAVE_DETECTIONS:
+        os.makedirs(DETECTIONS_DIR, exist_ok=True)
 
     logger.info("検出設定: model=%s, upsample=%d, resize=%d, ROI=%s",
                 FACE_MODEL, UPSAMPLE, RESIZE_WIDTH, "有効" if (USE_ROI and ROI) else "無効")
@@ -203,8 +213,9 @@ def main():
                 face_encodings = face_recognition.face_encodings(rgb, face_locations)
 
                 seen_names = set()
+                face_results = []  # [(name, location), ...]
 
-                for enc in face_encodings:
+                for i, enc in enumerate(face_encodings):
                     matches = face_recognition.compare_faces(
                         known_encodings, enc, tolerance=TOLERANCE
                     )
@@ -219,12 +230,42 @@ def main():
                         name = known_names[best_index]
 
                     seen_names.add(name)
+                    if i < len(face_locations):
+                        face_results.append((name, face_locations[i]))
 
                 ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 write_log(LOG_PATH, ts, seen_names)
 
                 if seen_names:
                     logger.info("%s -> %s", ts, ", ".join(sorted(seen_names)))
+
+                    # 検出画像を保存（BBOX付き）
+                    if SAVE_DETECTIONS and face_results:
+                        # 画像にBBOXを描画
+                        img_with_bbox = frame.copy()
+                        for name, (top, right, bottom, left) in face_results:
+                            color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
+                            cv2.rectangle(img_with_bbox, (left, top), (right, bottom), color, 2)
+                            cv2.putText(img_with_bbox, name, (left, top - 10),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+                        # 各検出者ごとに画像を保存
+                        timestamp_str = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        for name in seen_names:
+                            if name != "unknown":
+                                filename = f"detection_{timestamp_str}_{name}.jpg"
+                                filepath = os.path.join(DETECTIONS_DIR, filename)
+                                cv2.imwrite(filepath, img_with_bbox)
+
+                        # 古い画像を削除
+                        import glob as glob_module
+                        all_images = sorted(glob_module.glob(os.path.join(DETECTIONS_DIR, "*.jpg")))
+                        if len(all_images) > MAX_DETECTION_IMAGES:
+                            for old_img in all_images[:-MAX_DETECTION_IMAGES]:
+                                try:
+                                    os.remove(old_img)
+                                except:
+                                    pass
                 else:
                     logger.debug("%s -> none", ts)
 

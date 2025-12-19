@@ -432,30 +432,36 @@ HTML_TEMPLATE = """
                     <span id="configStatus" style="margin-left:10px;"></span>
                 </div>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;">
-                <div class="card" style="text-align:center;">
-                    <h3 style="color:#00d4ff;margin-bottom:10px;">今日の合計</h3>
-                    <div id="todayTotal" style="font-size:2.5em;font-weight:bold;">--</div>
-                    <div style="color:#888;">分</div>
-                </div>
-                <div class="card" style="text-align:center;">
-                    <h3 style="color:#00d4ff;margin-bottom:10px;">今週の合計</h3>
-                    <div id="weekTotal" style="font-size:2.5em;font-weight:bold;">--</div>
-                    <div style="color:#888;">分</div>
-                </div>
-                <div class="card" style="text-align:center;">
-                    <h3 style="color:#00d4ff;margin-bottom:10px;">最も視聴</h3>
-                    <div id="mostActive" style="font-size:2em;font-weight:bold;">--</div>
-                    <div style="color:#888;">今週</div>
-                </div>
+            <div class="card">
+                <h2>今日の視聴時間（ラベル別）</h2>
+                <div id="todayByLabel" style="display:flex;flex-wrap:wrap;gap:15px;"></div>
             </div>
             <div class="card">
-                <h2>日別視聴時間（過去7日）</h2>
-                <div style="height:300px;"><canvas id="dailyChart"></canvas></div>
+                <h2>今週の視聴時間（ラベル別）</h2>
+                <div id="weekByLabel" style="display:flex;flex-wrap:wrap;gap:15px;"></div>
             </div>
             <div class="card">
-                <h2>最近の検出</h2>
-                <div id="recentActivity" style="max-height:300px;overflow-y:auto;"></div>
+                <h2>検出状況</h2>
+                <h3 style="color:#ffe66d;margin:10px 0;">直近5枚</h3>
+                <div id="recentDetections" style="display:flex;gap:10px;overflow-x:auto;padding:10px 0;"></div>
+                <h3 style="color:#ffe66d;margin:15px 0 10px;">ラベル別 最新検出</h3>
+                <div id="labelDetections"></div>
+            </div>
+            <div class="card">
+                <h2>本日の視聴状況</h2>
+                <div style="height:200px;"><canvas id="todayLineChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>本日の時間帯別視聴（1時間単位）</h2>
+                <div style="height:200px;"><canvas id="todayBarChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>今週の視聴状況</h2>
+                <div style="height:200px;"><canvas id="weeklyChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>最近の検出ログ</h2>
+                <div id="recentActivity" style="max-height:200px;overflow-y:auto;"></div>
             </div>
         </div>
     </div>
@@ -1050,62 +1056,132 @@ HTML_TEMPLATE = """
             }
         }
 
+        let todayLineChart = null, todayBarChart = null, weeklyChart = null;
+
         function loadDashboard() {
             fetch('/api/dashboard').then(r => r.json()).then(data => {
-                // 今日の合計
                 const today = new Date().toISOString().slice(0, 10);
-                let todayTotal = 0;
-                if (data.daily[today]) {
-                    todayTotal = Object.values(data.daily[today]).reduce((a, b) => a + b, 0);
-                }
-                document.getElementById('todayTotal').textContent = Math.round(todayTotal);
-
-                // 週間合計
-                let weekTotal = 0;
-                let personTotals = {};
-                Object.values(data.daily).forEach(day => {
-                    Object.entries(day).forEach(([name, mins]) => {
-                        weekTotal += mins;
-                        personTotals[name] = (personTotals[name] || 0) + mins;
-                    });
-                });
-                document.getElementById('weekTotal').textContent = Math.round(weekTotal);
-
-                // 最も視聴した人
-                let mostActive = '--';
-                let maxMins = 0;
-                Object.entries(personTotals).forEach(([name, mins]) => {
-                    if (mins > maxMins) { maxMins = mins; mostActive = name; }
-                });
-                document.getElementById('mostActive').textContent = mostActive;
-
-                // チャート
-                const dates = Object.keys(data.daily).sort();
                 const names = data.target_names || ['mio', 'yu', 'tsubasa'];
-                const datasets = names.map(name => ({
+
+                // 今日のラベル別集計
+                let todayHtml = '';
+                names.forEach(name => {
+                    const mins = data.daily[today]?.[name] || 0;
+                    const color = nameColors[name] || '#888';
+                    todayHtml += `<div style="background:#0f3460;padding:15px 25px;border-radius:8px;text-align:center;border-left:4px solid ${color};">
+                        <div style="color:${color};font-weight:bold;margin-bottom:5px;">${name}</div>
+                        <div style="font-size:1.8em;font-weight:bold;">${Math.round(mins)}</div>
+                        <div style="color:#888;font-size:0.9em;">分</div>
+                    </div>`;
+                });
+                document.getElementById('todayByLabel').innerHTML = todayHtml || '<p style="color:#888;">データなし</p>';
+
+                // 週間のラベル別集計
+                let weekHtml = '';
+                names.forEach(name => {
+                    let total = 0;
+                    Object.values(data.daily).forEach(day => { total += day[name] || 0; });
+                    const color = nameColors[name] || '#888';
+                    weekHtml += `<div style="background:#0f3460;padding:15px 25px;border-radius:8px;text-align:center;border-left:4px solid ${color};">
+                        <div style="color:${color};font-weight:bold;margin-bottom:5px;">${name}</div>
+                        <div style="font-size:1.8em;font-weight:bold;">${Math.round(total)}</div>
+                        <div style="color:#888;font-size:0.9em;">分</div>
+                    </div>`;
+                });
+                document.getElementById('weekByLabel').innerHTML = weekHtml || '<p style="color:#888;">データなし</p>';
+
+                // 検出画像（直近5枚）
+                if (data.recent_images && data.recent_images.length > 0) {
+                    const imgHtml = data.recent_images.slice(0, 5).map(img =>
+                        `<img src="/detection_image/${img}" style="height:100px;border-radius:4px;border:2px solid #333;">`
+                    ).join('');
+                    document.getElementById('recentDetections').innerHTML = imgHtml;
+                } else {
+                    document.getElementById('recentDetections').innerHTML = '<p style="color:#888;">検出画像なし</p>';
+                }
+
+                // ラベル別最新検出
+                if (data.label_images) {
+                    let labelHtml = '';
+                    names.forEach(name => {
+                        const img = data.label_images[name];
+                        const color = nameColors[name] || '#888';
+                        const barcode = data.barcode?.[name] || [];
+                        const barcodeHtml = barcode.map(v =>
+                            `<div style="width:2px;height:20px;background:${v ? color : '#333'};"></div>`
+                        ).join('');
+                        labelHtml += `<div style="display:flex;align-items:center;gap:15px;margin-bottom:15px;padding:10px;background:#0f3460;border-radius:8px;">
+                            <div style="width:80px;height:80px;background:#1a1a2e;border-radius:4px;overflow:hidden;flex-shrink:0;">
+                                ${img ? `<img src="/detection_image/${img}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#444;">N/A</div>'}
+                            </div>
+                            <div style="flex:1;">
+                                <div style="color:${color};font-weight:bold;margin-bottom:5px;">${name}</div>
+                                <div style="display:flex;gap:1px;align-items:center;">
+                                    <span style="color:#888;font-size:0.8em;margin-right:5px;">1h前</span>
+                                    ${barcodeHtml}
+                                    <span style="color:#888;font-size:0.8em;margin-left:5px;">now</span>
+                                </div>
+                            </div>
+                        </div>`;
+                    });
+                    document.getElementById('labelDetections').innerHTML = labelHtml;
+                }
+
+                // 本日の折れ線グラフ（累積）
+                if (data.today_hourly) {
+                    const hours = Object.keys(data.today_hourly).sort();
+                    const datasets = names.map(name => {
+                        let cumulative = 0;
+                        return {
+                            label: name,
+                            data: hours.map(h => { cumulative += data.today_hourly[h]?.[name] || 0; return Math.round(cumulative); }),
+                            borderColor: nameColors[name] || '#888',
+                            backgroundColor: 'transparent',
+                            tension: 0.3
+                        };
+                    });
+                    if (todayLineChart) todayLineChart.destroy();
+                    todayLineChart = new Chart(document.getElementById('todayLineChart'), {
+                        type: 'line',
+                        data: { labels: hours.map(h => h + ':00'), datasets },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
+                    });
+                }
+
+                // 本日の棒グラフ（時間帯別）
+                if (data.today_hourly) {
+                    const hours = Object.keys(data.today_hourly).sort();
+                    const datasets = names.map(name => ({
+                        label: name,
+                        data: hours.map(h => Math.round(data.today_hourly[h]?.[name] || 0)),
+                        backgroundColor: nameColors[name] || '#888'
+                    }));
+                    if (todayBarChart) todayBarChart.destroy();
+                    todayBarChart = new Chart(document.getElementById('todayBarChart'), {
+                        type: 'bar',
+                        data: { labels: hours.map(h => h + ':00'), datasets },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } }, y: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
+                    });
+                }
+
+                // 週間の折れ線グラフ
+                const dates = Object.keys(data.daily).sort();
+                const weekDatasets = names.map(name => ({
                     label: name,
                     data: dates.map(d => Math.round(data.daily[d]?.[name] || 0)),
-                    backgroundColor: nameColors[name] || '#888',
                     borderColor: nameColors[name] || '#888',
-                    borderWidth: 1
+                    backgroundColor: 'transparent',
+                    tension: 0.3
                 }));
-
-                if (dashboardChart) dashboardChart.destroy();
-                dashboardChart = new Chart(document.getElementById('dailyChart'), {
-                    type: 'bar',
-                    data: { labels: dates.map(d => d.slice(5)), datasets: datasets },
-                    options: {
-                        responsive: true, maintainAspectRatio: false,
-                        scales: {
-                            x: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } },
-                            y: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } }
-                        },
-                        plugins: { legend: { labels: { color: '#eee' } } }
-                    }
+                if (weeklyChart) weeklyChart.destroy();
+                weeklyChart = new Chart(document.getElementById('weeklyChart'), {
+                    type: 'line',
+                    data: { labels: dates.map(d => d.slice(5)), datasets: weekDatasets },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                 });
 
-                // 最近の検出
-                const recentHtml = data.recent.slice(0, 30).map(e => {
+                // 最近の検出ログ
+                const recentHtml = data.recent.slice(0, 20).map(e => {
                     const color = nameColors[e.name] || '#888';
                     return `<div style="padding:5px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;">
                         <span>${e.timestamp}</span><span style="color:${color};">${e.name}</span>
@@ -1813,6 +1889,8 @@ from collections import defaultdict
 import subprocess
 
 LOG_PATH = os.path.expanduser("~/tv_watch_log.csv")
+DETECTIONS_DIR = os.path.expanduser("~/detections")
+os.makedirs(DETECTIONS_DIR, exist_ok=True)
 
 @app.route("/api/dashboard")
 def api_dashboard():
@@ -1822,9 +1900,15 @@ def api_dashboard():
     interval_sec = config.get("interval_sec", 5)
     target_names = config.get("target_names", ["mio", "yu", "tsubasa"])
 
-    cutoff = datetime.now() - timedelta(days=7)
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    cutoff = now - timedelta(days=7)
+    one_hour_ago = now - timedelta(hours=1)
+
     daily_minutes = defaultdict(lambda: defaultdict(float))
+    today_hourly = defaultdict(lambda: defaultdict(float))
     recent_entries = []
+    barcode = {name: [False] * 60 for name in target_names}  # 60 minutes
 
     if os.path.exists(log_path):
         try:
@@ -1839,6 +1923,15 @@ def api_dashboard():
                         if name in target_names:
                             date_str = ts.strftime("%Y-%m-%d")
                             daily_minutes[date_str][name] += interval_sec / 60.0
+                            # 今日の時間帯別集計
+                            if date_str == today_str:
+                                hour_str = ts.strftime("%H")
+                                today_hourly[hour_str][name] += interval_sec / 60.0
+                            # バーコード（直近1時間）
+                            if ts >= one_hour_ago:
+                                minute_idx = int((ts - one_hour_ago).total_seconds() / 60)
+                                if 0 <= minute_idx < 60:
+                                    barcode[name][minute_idx] = True
                         recent_entries.append({"timestamp": row["timestamp"], "name": name})
                     except (ValueError, KeyError):
                         continue
@@ -1847,11 +1940,39 @@ def api_dashboard():
 
     recent_entries = recent_entries[-50:][::-1]
 
+    # 検出画像の取得
+    recent_images = []
+    label_images = {name: None for name in target_names}
+    if os.path.exists(DETECTIONS_DIR):
+        all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
+        recent_images = [os.path.basename(f) for f in all_images[:5]]
+        # ラベル別最新画像
+        for img_path in all_images:
+            filename = os.path.basename(img_path)
+            # ファイル名形式: detection_TIMESTAMP_LABEL.jpg
+            parts = filename.replace(".jpg", "").split("_")
+            if len(parts) >= 3:
+                label = parts[-1]
+                if label in target_names and label_images[label] is None:
+                    label_images[label] = filename
+
     return jsonify({
         "daily": {k: dict(v) for k, v in daily_minutes.items()},
+        "today_hourly": {k: dict(v) for k, v in today_hourly.items()},
         "recent": recent_entries,
-        "target_names": target_names
+        "target_names": target_names,
+        "recent_images": recent_images,
+        "label_images": label_images,
+        "barcode": barcode
     })
+
+@app.route("/detection_image/<filename>")
+def detection_image(filename):
+    """検出画像を返す"""
+    path = os.path.join(DETECTIONS_DIR, filename)
+    if os.path.exists(path):
+        return send_file(path, mimetype='image/jpeg')
+    return "Not found", 404
 
 @app.route("/api/service_status")
 def api_service_status():
