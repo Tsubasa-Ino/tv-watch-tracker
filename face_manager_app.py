@@ -3,7 +3,8 @@
 顔管理Web UI
 - リアルタイムプレビュー＆撮影
 - ROI設定（複数保存対応）
-- 顔登録（抽出→ラベリング→エンコーディング）
+- 顔抽出（画像から顔を検出・保存）
+- 顔登録（ラベリング・自動エンコーディング）
 - 顔認識テスト
 - ダッシュボード
 """
@@ -75,6 +76,20 @@ def stop_service_and_get_camera():
         camera = cv2.VideoCapture(0)
     return camera
 
+def get_roi_by_index(roi_index):
+    """ROIインデックスからROIを取得"""
+    if roi_index == "" or roi_index is None:
+        return None
+    try:
+        idx = int(roi_index)
+        config = load_config()
+        presets = config.get("roi_presets", [])
+        if 0 <= idx < len(presets):
+            return presets[idx]
+    except (ValueError, TypeError):
+        pass
+    return None
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -119,45 +134,70 @@ HTML_TEMPLATE = """
         #roiCanvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
         .btn {
             padding: 12px 24px;
-            border: none;
+            border: 2px solid transparent;
             border-radius: 8px;
             font-size: 1em;
+            font-weight: bold;
             cursor: pointer;
             margin: 5px;
-            transition: opacity 0.3s;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        .btn:hover { opacity: 0.8; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-primary { background: #00d4ff; color: #1a1a2e; }
-        .btn-success { background: #4ecdc4; color: #1a1a2e; }
-        .btn-danger { background: #ff6b6b; color: #fff; }
-        .btn-secondary { background: #666; color: #fff; }
-        .btn-small { padding: 8px 16px; font-size: 0.9em; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.4); }
+        .btn:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-primary { background: linear-gradient(135deg, #00d4ff, #0099cc); color: #1a1a2e; border-color: #00b8e6; }
+        .btn-success { background: linear-gradient(135deg, #4ecdc4, #3db8b0); color: #1a1a2e; border-color: #45c4bb; }
+        .btn-danger { background: linear-gradient(135deg, #ff6b6b, #e55555); color: #fff; border-color: #ff5555; }
+        .btn-secondary { background: linear-gradient(135deg, #666, #555); color: #fff; border-color: #777; }
+        .btn-small { padding: 8px 16px; font-size: 0.85em; }
+        .service-header {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            border-bottom: 2px solid #0f3460;
+            flex-wrap: wrap;
+        }
+        .service-header .service-label { color: #888; font-size: 0.9em; }
+        .service-header #serviceStatus {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            min-width: 100px;
+            text-align: center;
+        }
         .status { padding: 10px; border-radius: 8px; margin: 10px 0; text-align: center; }
         .status.success { background: #4ecdc4; color: #1a1a2e; }
         .status.error { background: #ff6b6b; }
         .status.info { background: #0f3460; color: #00d4ff; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .grid-item { position: relative; aspect-ratio: 1; background: #0f3460; border-radius: 8px; overflow: hidden; cursor: pointer; }
         .grid-item img { width: 100%; height: 100%; object-fit: cover; }
-        .grid-item .overlay {
-            position: absolute; bottom: 0; left: 0; right: 0;
-            background: rgba(0,0,0,0.7); padding: 5px; font-size: 0.8em;
-            text-align: center; color: #fff;
-        }
         .grid-item .delete-btn {
             position: absolute; top: 5px; right: 5px;
             background: rgba(255,107,107,0.9); color: #fff;
             border: none; border-radius: 50%; width: 24px; height: 24px;
-            cursor: pointer; display: none;
+            cursor: pointer; display: none; font-size: 14px; line-height: 24px; text-align: center;
         }
         .grid-item:hover .delete-btn { display: block; }
         .grid-item.selected { outline: 3px solid #00d4ff; }
-        .face-select { cursor: pointer; padding: 5px; border-radius: 8px; background: #0f3460; text-align: center; transition: all 0.2s; }
-        .face-select:hover { background: #1a4a7a; }
-        .face-select.selected { outline: 3px solid #4ecdc4; background: #1a5a5a; }
-        .face-select img { width: 100px; height: 100px; object-fit: cover; border-radius: 4px; }
         .grid-item .filename { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); padding: 3px; font-size: 0.7em; text-align: center; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .grid-item.registered { outline: 3px solid #4ecdc4; }
+        .grid-item.unregistered { outline: 3px solid #ffe66d; }
+        .face-item { position: relative; display: inline-block; margin: 5px; }
+        .face-item img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+        .face-item.selected img { outline: 3px solid #00d4ff; }
+        .face-item .badge {
+            position: absolute; top: 3px; left: 3px;
+            padding: 2px 6px; border-radius: 4px; font-size: 0.6em;
+        }
+        .badge-registered { background: #4ecdc4; color: #000; }
+        .badge-unregistered { background: #ffe66d; color: #000; }
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #00d4ff; }
         .form-group input, .form-group select {
@@ -166,13 +206,6 @@ HTML_TEMPLATE = """
         }
         .roi-info { background: #0f3460; padding: 10px; border-radius: 8px; margin-top: 10px; font-family: monospace; }
         .face-list { max-height: 400px; overflow-y: auto; }
-        .face-item {
-            display: flex; align-items: center; gap: 15px;
-            background: #0f3460; padding: 10px; border-radius: 8px; margin-bottom: 10px;
-        }
-        .face-item img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; }
-        .face-item .info { flex: 1; }
-        .face-item input { background: #16213e; }
         .modal {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.9); justify-content: center; align-items: center; z-index: 100;
@@ -192,20 +225,24 @@ HTML_TEMPLATE = """
         .roi-preset { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
         .roi-preset-item {
             background: #0f3460; padding: 10px 15px; border-radius: 8px;
-            cursor: pointer; display: flex; align-items: center; gap: 10px;
-            border: 2px solid transparent; transition: all 0.2s;
+            display: flex; align-items: center; gap: 10px;
         }
-        .roi-preset-item:hover { border-color: #00d4ff; }
-        .roi-preset-item.active { border-color: #4ecdc4; background: #1a5a5a; }
         .roi-preset-item .delete-roi { color: #ff6b6b; cursor: pointer; font-size: 1.2em; }
-        .section { border-left: 3px solid #00d4ff; padding-left: 15px; margin-bottom: 20px; }
-        .section-title { color: #00d4ff; font-size: 1.1em; margin-bottom: 10px; }
+        .label-group { background: #0f3460; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .label-group h4 { color: #ffe66d; margin-bottom: 10px; }
     </style>
 </head>
 <body>
+    <div class="service-header">
+        <span class="service-label">顔認識サービス:</span>
+        <span id="serviceStatus" style="background:#666;">確認中...</span>
+        <button class="btn btn-success btn-small" onclick="serviceControl('start')">開始</button>
+        <button class="btn btn-danger btn-small" onclick="serviceControl('stop')">停止</button>
+    </div>
     <div class="tabs">
         <button class="tab active" onclick="showTab('camera')">カメラ</button>
         <button class="tab" onclick="showTab('roi')">ROI設定</button>
+        <button class="tab" onclick="showTab('extract')">顔抽出</button>
         <button class="tab" onclick="showTab('register')">顔登録</button>
         <button class="tab" onclick="showTab('recognize')">顔認識テスト</button>
         <button class="tab" onclick="showTab('dashboard')">ダッシュボード</button>
@@ -241,22 +278,18 @@ HTML_TEMPLATE = """
             <div class="card">
                 <h2>ROI（検出領域）設定</h2>
                 <p style="color:#888;margin-bottom:15px;">撮影画像を選択し、マウスでドラッグして検出領域を指定</p>
-
                 <h3>画像を選択</h3>
                 <div class="grid" id="roiImageGrid" style="margin-bottom:15px;"></div>
-
                 <div class="preview-container" id="roiContainer" style="display:none;">
                     <img id="roiImage" src="">
                     <canvas id="roiCanvas"></canvas>
                 </div>
-
                 <div id="roiEditControls" style="display:none;margin-top:15px;">
                     <button class="btn btn-success" onclick="saveRoiPreset()">ROI追加保存</button>
                     <button class="btn btn-danger" onclick="clearRoiDraw()">描画クリア</button>
                 </div>
                 <div class="roi-info" id="roiInfo">ROI: 未設定</div>
             </div>
-
             <div class="card">
                 <h2>保存済みROI一覧</h2>
                 <div id="roiPresetList" class="roi-preset"></div>
@@ -264,81 +297,68 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- 顔登録タブ -->
-        <div id="register" class="tab-content">
-            <!-- 顔抽出セクション -->
+        <!-- 顔抽出タブ -->
+        <div id="extract" class="tab-content">
             <div class="card">
-                <div class="section">
-                    <div class="section-title">1. 顔抽出</div>
-                    <p style="color:#888;margin-bottom:15px;">撮影画像から顔を検出して抽出</p>
-                </div>
+                <h2>顔抽出</h2>
+                <p style="color:#888;margin-bottom:15px;">撮影画像から顔を検出して抽出</p>
                 <div class="params">
                     <div class="form-group">
                         <label>検出モデル</label>
-                        <select id="registerModel">
+                        <select id="extractModel">
                             <option value="hog" selected>HOG（軽量）</option>
                             <option value="cnn">CNN（高精度）</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Upsample</label>
-                        <select id="registerUpsample">
+                        <select id="extractUpsample">
                             <option value="0">0</option>
                             <option value="1">1</option>
                             <option value="2" selected>2</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>処理サイズ</label>
-                        <select id="registerResize">
-                            <option value="0">元サイズ</option>
-                            <option value="480">480px</option>
-                            <option value="640" selected>640px</option>
-                            <option value="800">800px</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
                         <label>ROI選択</label>
-                        <select id="registerRoiSelect" onchange="loadRegisterImages()">
+                        <select id="extractRoiSelect" onchange="loadExtractImages()">
                             <option value="">使用しない</option>
                         </select>
                     </div>
                 </div>
                 <h3>画像を選択（複数可）</h3>
-                <div class="grid" id="registerImageGrid"></div>
+                <div class="grid" id="extractImageGrid"></div>
                 <div style="margin-top:15px;">
-                    <button class="btn btn-primary" onclick="detectForRegister()">選択画像から顔を検出</button>
+                    <button class="btn btn-primary" onclick="extractFaces()">選択画像から顔を検出</button>
                 </div>
-                <div id="registerDetectStatus"></div>
+                <div id="extractStatus"></div>
             </div>
+            <div class="card">
+                <h2>抽出済み顔一覧</h2>
+                <p style="color:#888;margin-bottom:10px;"><span style="background:#4ecdc4;color:#000;padding:2px 6px;border-radius:4px;font-size:0.8em;">登録済</span> <span style="background:#ffe66d;color:#000;padding:2px 6px;border-radius:4px;font-size:0.8em;">未登録</span></p>
+                <div id="extractedFacesList"></div>
+            </div>
+        </div>
 
-            <!-- ラベリングセクション -->
-            <div class="card" id="labelingCard" style="display:none;">
-                <div class="section">
-                    <div class="section-title">2. ラベリング</div>
-                    <p style="color:#888;margin-bottom:10px;">検出された顔を選択し、名前を付けて保存</p>
-                </div>
+        <!-- 顔登録タブ -->
+        <div id="register" class="tab-content">
+            <div class="card">
+                <h2>未登録顔のラベリング</h2>
+                <p style="color:#888;margin-bottom:15px;">顔を選択し、名前を付けて登録（登録後自動エンコード）</p>
                 <div class="form-group" style="max-width:300px;">
                     <label>登録する人の名前</label>
-                    <input type="text" id="registerLabel" placeholder="例: tsubasa">
+                    <input type="text" id="labelName" placeholder="例: tsubasa">
                 </div>
-                <div style="display:flex;flex-wrap:wrap;gap:10px;" id="registerFaces"></div>
+                <div id="unregisteredFaces"></div>
                 <div style="margin-top:15px;">
-                    <button class="btn btn-success" onclick="saveSelectedFaces()">選択した顔を保存</button>
-                    <button class="btn btn-secondary" onclick="selectAllFaces()">全選択</button>
-                    <button class="btn btn-secondary" onclick="deselectAllFaces()">全解除</button>
+                    <button class="btn btn-success" onclick="registerSelectedFaces()">選択した顔を登録</button>
+                    <button class="btn btn-secondary" onclick="selectAllUnregistered()">全選択</button>
+                    <button class="btn btn-secondary" onclick="deselectAllUnregistered()">全解除</button>
                 </div>
-                <div id="registerSaveStatus"></div>
+                <div id="registerStatus"></div>
             </div>
-
-            <!-- エンコーディングセクション -->
             <div class="card">
-                <div class="section">
-                    <div class="section-title">3. エンコーディング</div>
-                    <p style="color:#888;margin-bottom:10px;">保存した顔写真からエンコーディングを生成</p>
-                </div>
-                <div id="labeledFaces"></div>
-                <div id="encodingStatus"></div>
+                <h2>登録済み顔一覧</h2>
+                <div id="registeredFaces"></div>
             </div>
         </div>
 
@@ -392,16 +412,6 @@ HTML_TEMPLATE = """
         <!-- ダッシュボードタブ -->
         <div id="dashboard" class="tab-content">
             <div class="card">
-                <h2>顔認識サービス制御</h2>
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                    <span id="serviceStatus" style="padding:8px 16px;border-radius:8px;background:#666;">状態確認中...</span>
-                    <button class="btn btn-success btn-small" onclick="serviceControl('start')">開始</button>
-                    <button class="btn btn-danger btn-small" onclick="serviceControl('stop')">停止</button>
-                    <button class="btn btn-secondary btn-small" onclick="serviceControl('restart')">再起動</button>
-                    <button class="btn btn-primary btn-small" onclick="loadServiceStatus()">更新</button>
-                </div>
-            </div>
-            <div class="card">
                 <h2>検出パラメータ設定</h2>
                 <div class="params">
                     <div class="form-group">
@@ -417,15 +427,6 @@ HTML_TEMPLATE = """
                             <option value="0">0（高速）</option>
                             <option value="1">1</option>
                             <option value="2">2（小顔検出）</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>縮小サイズ</label>
-                        <select id="cfgResize">
-                            <option value="320">320px</option>
-                            <option value="480">480px</option>
-                            <option value="640">640px</option>
-                            <option value="0">なし</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -446,10 +447,9 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>ROI使用</label>
-                        <select id="cfgUseRoi">
-                            <option value="true">有効</option>
-                            <option value="false">無効</option>
+                        <label>ROI選択</label>
+                        <select id="cfgRoiSelect">
+                            <option value="">使用しない</option>
                         </select>
                     </div>
                 </div>
@@ -507,7 +507,7 @@ HTML_TEMPLATE = """
         let modalImagePath = '';
         let selectedRoiImage = '';
         let roiPresets = [];
-        let activeRoiIndex = -1;
+        let currentTab = 'camera';
 
         // タブ切り替え
         function showTab(tabId) {
@@ -519,9 +519,10 @@ HTML_TEMPLATE = """
 
             if (tabId === 'camera') { checkCameraStatus(); loadCaptures(); }
             if (tabId === 'roi') { loadRoiImages(); loadRoiPresets(); }
-            if (tabId === 'register') { populateRoiDropdown('registerRoiSelect'); loadRegisterImages(); loadLabeledFaces(); }
+            if (tabId === 'extract') { populateRoiDropdown('extractRoiSelect'); loadExtractImages(); loadExtractedFaces(); }
+            if (tabId === 'register') { loadUnregisteredFaces(); loadRegisteredFaces(); }
             if (tabId === 'recognize') { populateRoiDropdown('recogRoiSelect'); loadRecogImages(); }
-            if (tabId === 'dashboard') { loadDashboard(); loadServiceStatus(); loadConfig(); startDashboardRefresh(); }
+            if (tabId === 'dashboard') { populateRoiDropdown('cfgRoiSelect'); loadDashboard(); loadServiceStatus(); loadConfig(); startDashboardRefresh(); }
             else { stopDashboardRefresh(); }
         }
 
@@ -540,21 +541,16 @@ HTML_TEMPLATE = """
             });
         }
 
-        // カメラ開始
         function startCamera() {
-            fetch('/start_camera', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('cameraOverlay').style.display = 'none';
-                        document.getElementById('cameraContainer').style.display = 'block';
-                        const preview = document.getElementById('cameraPreview');
-                        preview.src = '/stream?' + Date.now();
-                    }
-                });
+            fetch('/start_camera', { method: 'POST' }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    document.getElementById('cameraOverlay').style.display = 'none';
+                    document.getElementById('cameraContainer').style.display = 'block';
+                    document.getElementById('cameraPreview').src = '/stream?' + Date.now();
+                }
+            });
         }
 
-        // ステータス表示
         function showStatus(elementId, message, type) {
             const el = document.getElementById(elementId);
             el.className = 'status ' + type;
@@ -564,9 +560,7 @@ HTML_TEMPLATE = """
 
         // 撮影
         function capture() {
-            fetch('/capture', {method: 'POST'})
-            .then(r => r.json())
-            .then(data => {
+            fetch('/capture', {method: 'POST'}).then(r => r.json()).then(data => {
                 if (data.success) {
                     showStatus('captureStatus', '撮影完了: ' + data.filename, 'success');
                     loadCaptures();
@@ -576,7 +570,6 @@ HTML_TEMPLATE = """
             });
         }
 
-        // 撮影画像一覧
         function loadCaptures() {
             fetch('/captures').then(r => r.json()).then(data => {
                 const grid = document.getElementById('captureGrid');
@@ -602,12 +595,12 @@ HTML_TEMPLATE = """
             }).then(() => loadCaptures());
         }
 
-        // ROI設定 - 画像グリッド読み込み
+        // ROI設定
         function loadRoiImages() {
             fetch('/captures').then(r => r.json()).then(data => {
                 const grid = document.getElementById('roiImageGrid');
                 if (data.length === 0) {
-                    grid.innerHTML = '<p style="color:#888;">撮影画像なし（カメラタブで撮影してください）</p>';
+                    grid.innerHTML = '<p style="color:#888;">撮影画像なし</p>';
                     return;
                 }
                 grid.innerHTML = data.map(f => `
@@ -623,11 +616,9 @@ HTML_TEMPLATE = """
             document.querySelectorAll('#roiImageGrid .grid-item').forEach(el => el.classList.remove('selected'));
             element.classList.add('selected');
             selectedRoiImage = filename;
-
             const img = document.getElementById('roiImage');
             img.src = '/capture_image/' + filename;
             img.onload = setupRoiCanvas;
-
             document.getElementById('roiContainer').style.display = 'block';
             document.getElementById('roiEditControls').style.display = 'block';
             currentRoi = null;
@@ -645,7 +636,6 @@ HTML_TEMPLATE = """
         function loadRoiPresets() {
             fetch('/api/roi_presets').then(r => r.json()).then(data => {
                 roiPresets = data.presets || [];
-                activeRoiIndex = data.activeIndex;
                 renderRoiPresets();
             });
         }
@@ -661,7 +651,6 @@ HTML_TEMPLATE = """
                     opt.textContent = p.name || ('ROI ' + (i+1));
                     select.appendChild(opt);
                 });
-                // 前回の選択を維持
                 if (currentValue && select.querySelector(`option[value="${currentValue}"]`)) {
                     select.value = currentValue;
                 }
@@ -689,16 +678,11 @@ HTML_TEMPLATE = """
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({index: index})
-            }).then(r => r.json()).then(() => {
-                loadRoiPresets();
-            });
+            }).then(() => loadRoiPresets());
         }
 
         function saveRoiPreset() {
-            if (!currentRoi) {
-                alert('ROIを描画してください');
-                return;
-            }
+            if (!currentRoi) { alert('ROIを描画してください'); return; }
             const name = 'ROI ' + (roiPresets.length + 1);
             fetch('/api/roi_presets/add', {
                 method: 'POST',
@@ -710,7 +694,7 @@ HTML_TEMPLATE = """
                     drawRoi();
                     updateRoiInfo();
                     loadRoiPresets();
-                    showStatus('roiPresetStatus', 'ROI "' + name + '" を保存しました', 'success');
+                    showStatus('roiPresetStatus', 'ROI "' + data.name + '" を保存しました', 'success');
                 }
             });
         }
@@ -723,34 +707,21 @@ HTML_TEMPLATE = """
 
         function updateRoiInfo() {
             const el = document.getElementById('roiInfo');
-            if (currentRoi) {
-                el.textContent = `描画中ROI: x=${currentRoi.x}, y=${currentRoi.y}, w=${currentRoi.w}, h=${currentRoi.h}`;
-            } else {
-                el.textContent = 'ROI: 未描画（マウスでドラッグして描画）';
-            }
+            el.textContent = currentRoi ? `描画中ROI: x=${currentRoi.x}, y=${currentRoi.y}, w=${currentRoi.w}, h=${currentRoi.h}` : 'ROI: 未描画';
         }
 
         function drawRoi() {
             const canvas = document.getElementById('roiCanvas');
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
             if (currentRoi) {
                 const img = document.getElementById('roiImage');
                 const scaleX = canvas.width / img.naturalWidth;
                 const scaleY = canvas.height / img.naturalHeight;
-
                 ctx.strokeStyle = '#00d4ff';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([5, 5]);
-                ctx.strokeRect(
-                    currentRoi.x * scaleX,
-                    currentRoi.y * scaleY,
-                    currentRoi.w * scaleX,
-                    currentRoi.h * scaleY
-                );
-
-                // 半透明オーバーレイ（ROI外）
+                ctx.strokeRect(currentRoi.x * scaleX, currentRoi.y * scaleY, currentRoi.w * scaleX, currentRoi.h * scaleY);
                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                 ctx.fillRect(0, 0, canvas.width, currentRoi.y * scaleY);
                 ctx.fillRect(0, (currentRoi.y + currentRoi.h) * scaleY, canvas.width, canvas.height);
@@ -759,26 +730,21 @@ HTML_TEMPLATE = """
             }
         }
 
-        // ROIマウス操作
         document.addEventListener('DOMContentLoaded', () => {
             const canvas = document.getElementById('roiCanvas');
-
             canvas.addEventListener('mousedown', (e) => {
                 roiDrawing = true;
                 const rect = canvas.getBoundingClientRect();
                 roiStart = {x: e.clientX - rect.left, y: e.clientY - rect.top};
             });
-
             canvas.addEventListener('mousemove', (e) => {
                 if (!roiDrawing) return;
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
-
                 const img = document.getElementById('roiImage');
                 const scaleX = img.naturalWidth / canvas.width;
                 const scaleY = img.naturalHeight / canvas.height;
-
                 currentRoi = {
                     x: Math.round(Math.min(roiStart.x, x) * scaleX),
                     y: Math.round(Math.min(roiStart.y, y) * scaleY),
@@ -788,11 +754,8 @@ HTML_TEMPLATE = """
                 updateRoiInfo();
                 drawRoi();
             });
-
             canvas.addEventListener('mouseup', () => { roiDrawing = false; });
             canvas.addEventListener('mouseleave', () => { roiDrawing = false; });
-
-            // タッチ対応
             canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 const touch = e.touches[0];
@@ -800,7 +763,6 @@ HTML_TEMPLATE = """
                 roiDrawing = true;
                 roiStart = {x: touch.clientX - rect.left, y: touch.clientY - rect.top};
             });
-
             canvas.addEventListener('touchmove', (e) => {
                 e.preventDefault();
                 if (!roiDrawing) return;
@@ -808,11 +770,9 @@ HTML_TEMPLATE = """
                 const rect = canvas.getBoundingClientRect();
                 const x = touch.clientX - rect.left;
                 const y = touch.clientY - rect.top;
-
                 const img = document.getElementById('roiImage');
                 const scaleX = img.naturalWidth / canvas.width;
                 const scaleY = img.naturalHeight / canvas.height;
-
                 currentRoi = {
                     x: Math.round(Math.min(roiStart.x, x) * scaleX),
                     y: Math.round(Math.min(roiStart.y, y) * scaleY),
@@ -822,198 +782,164 @@ HTML_TEMPLATE = """
                 updateRoiInfo();
                 drawRoi();
             });
-
             canvas.addEventListener('touchend', () => { roiDrawing = false; });
+            checkCameraStatus();
+            loadCaptures();
         });
 
-        // 顔登録用画像読み込み
-        let selectedRegisterImages = new Set();
-        let detectedFacesData = [];
+        // 顔抽出
+        let selectedExtractImages = new Set();
 
-        function loadRegisterImages() {
-            const roiIndex = document.getElementById('registerRoiSelect').value;
+        function loadExtractImages() {
+            const roiIndex = document.getElementById('extractRoiSelect').value;
             fetch('/captures').then(r => r.json()).then(data => {
-                const grid = document.getElementById('registerImageGrid');
+                const grid = document.getElementById('extractImageGrid');
                 if (data.length === 0) {
                     grid.innerHTML = '<p style="color:#888;">撮影画像なし</p>';
                     return;
                 }
                 grid.innerHTML = data.map(f => `
-                    <div class="grid-item" onclick="toggleRegisterImage('${f}', this)">
+                    <div class="grid-item" onclick="toggleExtractImage('${f}', this)">
                         <img src="/thumbnail_roi/${f}?roi_index=${roiIndex}&${Date.now()}">
                         <div class="filename">${f}</div>
                     </div>
                 `).join('');
-                selectedRegisterImages.clear();
+                selectedExtractImages.clear();
             });
         }
 
-        function toggleRegisterImage(filename, element) {
-            if (selectedRegisterImages.has(filename)) {
-                selectedRegisterImages.delete(filename);
+        function toggleExtractImage(filename, element) {
+            if (selectedExtractImages.has(filename)) {
+                selectedExtractImages.delete(filename);
                 element.classList.remove('selected');
             } else {
-                selectedRegisterImages.add(filename);
+                selectedExtractImages.add(filename);
                 element.classList.add('selected');
             }
         }
 
-        let registerParams = {model: 'hog', upsample: 2, resize: 640, useRoi: true};
-
-        function detectForRegister() {
-            if (selectedRegisterImages.size === 0) {
-                alert('画像を選択してください');
-                return;
-            }
-            showStatus('registerDetectStatus', '検出中...', 'info');
-            detectedFacesData = [];
-
-            registerParams.model = document.getElementById('registerModel').value;
-            registerParams.upsample = parseInt(document.getElementById('registerUpsample').value);
-            registerParams.resize = parseInt(document.getElementById('registerResize').value);
-            registerParams.roiIndex = document.getElementById('registerRoiSelect').value;
-
-            const images = Array.from(selectedRegisterImages);
+        function extractFaces() {
+            if (selectedExtractImages.size === 0) { alert('画像を選択してください'); return; }
+            showStatus('extractStatus', '検出中...', 'info');
+            const model = document.getElementById('extractModel').value;
+            const upsample = parseInt(document.getElementById('extractUpsample').value);
+            const roiIndex = document.getElementById('extractRoiSelect').value;
+            const images = Array.from(selectedExtractImages);
             let completed = 0;
+            let totalFaces = 0;
 
             images.forEach(image => {
-                fetch('/detect_faces_only', {
+                fetch('/extract_and_save_faces', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({image, model: registerParams.model, upsample: registerParams.upsample, resize: registerParams.resize, roi_index: registerParams.roiIndex})
+                    body: JSON.stringify({image, model, upsample, roi_index: roiIndex})
                 }).then(r => r.json()).then(data => {
-                    if (data.success && data.faces.length > 0) {
-                        data.faces.forEach((f, i) => {
-                            detectedFacesData.push({image: image, idx: i});
-                        });
-                    }
+                    if (data.success) totalFaces += data.count;
                     completed++;
                     if (completed === images.length) {
-                        showRegisterResults();
+                        showStatus('extractStatus', `${totalFaces}個の顔を抽出しました`, 'success');
+                        loadExtractedFaces();
                     }
                 });
             });
         }
 
-        function showRegisterResults() {
-            if (detectedFacesData.length === 0) {
-                showStatus('registerDetectStatus', '顔が検出されませんでした', 'error');
-                document.getElementById('labelingCard').style.display = 'none';
-                return;
-            }
-            showStatus('registerDetectStatus', `${detectedFacesData.length}個の顔を検出`, 'success');
-            document.getElementById('labelingCard').style.display = 'block';
-
-            const p = registerParams;
-            const container = document.getElementById('registerFaces');
-            container.innerHTML = detectedFacesData.map((f, i) => `
-                <div class="face-select selected" data-index="${i}" onclick="toggleFaceSelect(this)">
-                    <img src="/face_crop/${f.image}/${f.idx}?roi_index=${p.roiIndex}&model=${p.model}&upsample=${p.upsample}&resize=${p.resize}&${Date.now()}">
-                </div>
-            `).join('');
-        }
-
-        function toggleFaceSelect(element) {
-            element.classList.toggle('selected');
-        }
-
-        function selectAllFaces() {
-            document.querySelectorAll('#registerFaces .face-select').forEach(el => el.classList.add('selected'));
-        }
-
-        function deselectAllFaces() {
-            document.querySelectorAll('#registerFaces .face-select').forEach(el => el.classList.remove('selected'));
-        }
-
-        function saveSelectedFaces() {
-            const label = document.getElementById('registerLabel').value.trim().toLowerCase();
-            if (!label) {
-                alert('名前を入力してください');
-                return;
-            }
-
-            const selected = document.querySelectorAll('#registerFaces .face-select.selected');
-            if (selected.length === 0) {
-                alert('保存する顔を選択してください');
-                return;
-            }
-
-            showStatus('registerSaveStatus', '保存中...', 'info');
-            let completed = 0;
-            let saved = 0;
-            const p = registerParams;
-
-            selected.forEach(el => {
-                const idx = parseInt(el.dataset.index);
-                const faceData = detectedFacesData[idx];
-
-                fetch('/save_face', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        image: faceData.image,
-                        idx: faceData.idx,
-                        label: label,
-                        roi_index: p.roiIndex,
-                        model: p.model,
-                        upsample: p.upsample,
-                        resize: p.resize
-                    })
-                }).then(r => r.json()).then(data => {
-                    if (data.success) saved++;
-                    completed++;
-                    if (completed === selected.length) {
-                        showStatus('registerSaveStatus', `${saved}件保存しました`, 'success');
-                        loadLabeledFaces();
-                    }
-                });
-            });
-        }
-
-        // ラベル別一覧（エンコーディングセクション）
-        function loadLabeledFaces() {
-            fetch('/labeled_faces_status').then(r => r.json()).then(data => {
-                const container = document.getElementById('labeledFaces');
-                if (Object.keys(data).length === 0) {
-                    container.innerHTML = '<p style="color:#888;">登録された顔なし</p>';
+        function loadExtractedFaces() {
+            fetch('/all_faces_status').then(r => r.json()).then(data => {
+                const container = document.getElementById('extractedFacesList');
+                if (data.length === 0) {
+                    container.innerHTML = '<p style="color:#888;">抽出済み顔なし</p>';
                     return;
                 }
-                container.innerHTML = Object.entries(data).map(([label, info]) => {
-                    let statusBadge = '';
-                    if (info.encoded && info.newPhotos === 0) {
-                        statusBadge = '<span style="background:#4ecdc4;color:#000;padding:2px 8px;border-radius:4px;font-size:0.8em;">エンコード済</span>';
-                    } else if (info.encoded && info.newPhotos > 0) {
-                        statusBadge = `<span style="background:#ffe66d;color:#000;padding:2px 8px;border-radius:4px;font-size:0.8em;">+${info.newPhotos}枚 未反映</span>`;
-                    } else {
-                        statusBadge = '<span style="background:#ff6b6b;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em;">未エンコード</span>';
-                    }
-                    return `
-                        <div style="background:#0f3460;padding:15px;border-radius:8px;margin-bottom:15px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                                <h3 style="margin:0;">${label} (${info.photos.length}枚) ${statusBadge}</h3>
-                                <button class="btn btn-success btn-small" onclick="buildEncodingForLabel('${label}')">エンコード</button>
+                container.innerHTML = data.map(f => `
+                    <div class="face-item">
+                        <img src="/face_image/${f.filename}">
+                        <span class="badge ${f.label ? 'badge-registered' : 'badge-unregistered'}">${f.label || '未登録'}</span>
+                    </div>
+                `).join('');
+            });
+        }
+
+        // 顔登録
+        let selectedUnregisteredFaces = new Set();
+
+        function loadUnregisteredFaces() {
+            fetch('/unregistered_faces').then(r => r.json()).then(data => {
+                const container = document.getElementById('unregisteredFaces');
+                if (data.length === 0) {
+                    container.innerHTML = '<p style="color:#888;">未登録の顔なし</p>';
+                    return;
+                }
+                container.innerHTML = data.map(f => `
+                    <div class="face-item" data-file="${f}" onclick="toggleUnregisteredFace('${f}', this)">
+                        <img src="/face_image/${f}">
+                    </div>
+                `).join('');
+                selectedUnregisteredFaces.clear();
+            });
+        }
+
+        function toggleUnregisteredFace(filename, element) {
+            if (selectedUnregisteredFaces.has(filename)) {
+                selectedUnregisteredFaces.delete(filename);
+                element.classList.remove('selected');
+            } else {
+                selectedUnregisteredFaces.add(filename);
+                element.classList.add('selected');
+            }
+        }
+
+        function selectAllUnregistered() {
+            document.querySelectorAll('#unregisteredFaces .face-item').forEach(el => {
+                el.classList.add('selected');
+                selectedUnregisteredFaces.add(el.dataset.file);
+            });
+        }
+
+        function deselectAllUnregistered() {
+            document.querySelectorAll('#unregisteredFaces .face-item').forEach(el => el.classList.remove('selected'));
+            selectedUnregisteredFaces.clear();
+        }
+
+        function registerSelectedFaces() {
+            const label = document.getElementById('labelName').value.trim().toLowerCase();
+            if (!label) { alert('名前を入力してください'); return; }
+            if (selectedUnregisteredFaces.size === 0) { alert('顔を選択してください'); return; }
+            showStatus('registerStatus', '登録中...', 'info');
+
+            fetch('/register_faces', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({files: Array.from(selectedUnregisteredFaces), label: label})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    showStatus('registerStatus', `${data.count}件登録・エンコード完了`, 'success');
+                    loadUnregisteredFaces();
+                    loadRegisteredFaces();
+                } else {
+                    showStatus('registerStatus', 'エラー: ' + data.error, 'error');
+                }
+            });
+        }
+
+        function loadRegisteredFaces() {
+            fetch('/registered_faces_by_label').then(r => r.json()).then(data => {
+                const container = document.getElementById('registeredFaces');
+                if (Object.keys(data).length === 0) {
+                    container.innerHTML = '<p style="color:#888;">登録済み顔なし</p>';
+                    return;
+                }
+                container.innerHTML = Object.entries(data).map(([label, files]) => `
+                    <div class="label-group">
+                        <h4>${label} (${files.length}枚)</h4>
+                        <div>${files.map(f => `
+                            <div class="face-item">
+                                <img src="/face_image/${f}">
+                                <button class="delete-btn" style="display:block;top:-5px;right:-5px;width:20px;height:20px;font-size:12px;line-height:20px;" onclick="deleteFace('${f}')">&times;</button>
                             </div>
-                            <div class="grid">
-                                ${info.photos.map(f => {
-                                    const isEncoded = info.encodedFiles && info.encodedFiles.includes(f);
-                                    const style = isEncoded
-                                        ? 'outline:3px solid #4ecdc4;'
-                                        : 'outline:3px solid #ff6b6b;';
-                                    const badge = isEncoded
-                                        ? '<span style="position:absolute;top:3px;left:3px;background:#4ecdc4;color:#000;font-size:0.6em;padding:1px 4px;border-radius:3px;">✓</span>'
-                                        : '<span style="position:absolute;top:3px;left:3px;background:#ff6b6b;color:#fff;font-size:0.6em;padding:1px 4px;border-radius:3px;">未</span>';
-                                    return `
-                                        <div class="grid-item" style="${style}">
-                                            ${badge}
-                                            <img src="/face_image/${f}">
-                                            <button class="delete-btn" onclick="deleteFace('${f}')">&times;</button>
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+                        `).join('')}</div>
+                    </div>
+                `).join('');
             });
         }
 
@@ -1023,24 +949,10 @@ HTML_TEMPLATE = """
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({filename})
-            }).then(() => loadLabeledFaces());
-        }
-
-        function buildEncodingForLabel(label) {
-            showStatus('encodingStatus', `${label} のエンコーディング生成中...`, 'info');
-            fetch('/build_encoding_for_label', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({label})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showStatus('encodingStatus', `${label}: ${data.count}件のエンコーディングを生成`, 'success');
-                    loadLabeledFaces();
-                } else {
-                    showStatus('encodingStatus', 'エラー: ' + data.error, 'error');
-                }
+            }).then(() => {
+                loadUnregisteredFaces();
+                loadRegisteredFaces();
+                loadExtractedFaces();
             });
         }
 
@@ -1050,7 +962,7 @@ HTML_TEMPLATE = """
             fetch('/captures').then(r => r.json()).then(data => {
                 const grid = document.getElementById('recogImageGrid');
                 if (data.length === 0) {
-                    grid.innerHTML = '<p style="color:#888;">撮影画像なし（カメラタブで撮影してください）</p>';
+                    grid.innerHTML = '<p style="color:#888;">撮影画像なし</p>';
                     return;
                 }
                 grid.innerHTML = data.map(f => `
@@ -1074,9 +986,7 @@ HTML_TEMPLATE = """
             const upsample = document.getElementById('recogUpsample').value;
             const tolerance = document.getElementById('recogTolerance').value;
             const roiIndex = document.getElementById('recogRoiSelect').value;
-
             if (!image) { alert('画像を選択してください'); return; }
-
             showStatus('recogStatus', '認識中...', 'info');
 
             fetch('/recognize', {
@@ -1097,9 +1007,9 @@ HTML_TEMPLATE = """
                             <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
                                 ${data.faces.map((f, i) => `
                                     <div class="face-box" style="border-left:4px solid ${nameColors[f.name] || '#888'};">
-                                        <img src="/face_crop/${data.image}/${i}?roi_index=${roiIndex}&${Date.now()}">
+                                        <img src="/recog_face/${i}?${Date.now()}">
                                         <div style="color:${nameColors[f.name] || '#888'};font-weight:bold;">${f.name}</div>
-                                        <div style="font-size:0.8em;color:#888;">距離: ${f.distance.toFixed(3)}</div>
+                                        <div style="font-size:0.8em;color:#888;">類似度: ${Math.max(0, (1 - f.distance) * 100).toFixed(1)}%</div>
                                     </div>
                                 `).join('')}
                             </div>
@@ -1118,9 +1028,7 @@ HTML_TEMPLATE = """
             document.getElementById('modal').classList.add('active');
         }
 
-        function closeModal() {
-            document.getElementById('modal').classList.remove('active');
-        }
+        function closeModal() { document.getElementById('modal').classList.remove('active'); }
 
         function deleteModalImage() {
             if (!confirm('削除しますか？')) return;
@@ -1132,26 +1040,18 @@ HTML_TEMPLATE = """
         }
 
         // ダッシュボード
-        let dashboardChart = null;
         let dashboardRefreshInterval = null;
-        let currentTab = 'camera';
-        const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888', 'none': '#444'};
+        const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888'};
 
         function startDashboardRefresh() {
             if (dashboardRefreshInterval) clearInterval(dashboardRefreshInterval);
             dashboardRefreshInterval = setInterval(() => {
-                if (currentTab === 'dashboard') {
-                    loadDashboard();
-                    loadServiceStatus();
-                }
+                if (currentTab === 'dashboard') { loadDashboard(); loadServiceStatus(); }
             }, 10000);
         }
 
         function stopDashboardRefresh() {
-            if (dashboardRefreshInterval) {
-                clearInterval(dashboardRefreshInterval);
-                dashboardRefreshInterval = null;
-            }
+            if (dashboardRefreshInterval) { clearInterval(dashboardRefreshInterval); dashboardRefreshInterval = null; }
         }
 
         let todayLineChart = null, todayBarChart = null, weeklyChart = null;
@@ -1161,7 +1061,6 @@ HTML_TEMPLATE = """
                 const today = new Date().toISOString().slice(0, 10);
                 const names = data.target_names || ['mio', 'yu', 'tsubasa'];
 
-                // 今日のラベル別集計
                 let todayHtml = '';
                 names.forEach(name => {
                     const mins = data.daily[today]?.[name] || 0;
@@ -1174,7 +1073,6 @@ HTML_TEMPLATE = """
                 });
                 document.getElementById('todayByLabel').innerHTML = todayHtml || '<p style="color:#888;">データなし</p>';
 
-                // 週間のラベル別集計
                 let weekHtml = '';
                 names.forEach(name => {
                     let total = 0;
@@ -1188,26 +1086,21 @@ HTML_TEMPLATE = """
                 });
                 document.getElementById('weekByLabel').innerHTML = weekHtml || '<p style="color:#888;">データなし</p>';
 
-                // 検出画像（直近5枚）
                 if (data.recent_images && data.recent_images.length > 0) {
-                    const imgHtml = data.recent_images.slice(0, 5).map(img =>
+                    document.getElementById('recentDetections').innerHTML = data.recent_images.slice(0, 5).map(img =>
                         `<img src="/detection_image/${img}" style="height:100px;border-radius:4px;border:2px solid #333;">`
                     ).join('');
-                    document.getElementById('recentDetections').innerHTML = imgHtml;
                 } else {
                     document.getElementById('recentDetections').innerHTML = '<p style="color:#888;">検出画像なし</p>';
                 }
 
-                // ラベル別最新検出
                 if (data.label_images) {
                     let labelHtml = '';
                     names.forEach(name => {
                         const img = data.label_images[name];
                         const color = nameColors[name] || '#888';
                         const barcode = data.barcode?.[name] || [];
-                        const barcodeHtml = barcode.map(v =>
-                            `<div style="width:2px;height:20px;background:${v ? color : '#333'};"></div>`
-                        ).join('');
+                        const barcodeHtml = barcode.map(v => `<div style="width:2px;height:20px;background:${v ? color : '#333'};"></div>`).join('');
                         labelHtml += `<div style="display:flex;align-items:center;gap:15px;margin-bottom:15px;padding:10px;background:#0f3460;border-radius:8px;">
                             <div style="width:80px;height:80px;background:#1a1a2e;border-radius:4px;overflow:hidden;flex-shrink:0;">
                                 ${img ? `<img src="/detection_image/${img}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#444;">N/A</div>'}
@@ -1225,65 +1118,45 @@ HTML_TEMPLATE = """
                     document.getElementById('labelDetections').innerHTML = labelHtml;
                 }
 
-                // 本日の折れ線グラフ（累積）
                 if (data.today_hourly) {
                     const hours = Object.keys(data.today_hourly).sort();
                     const datasets = names.map(name => {
                         let cumulative = 0;
                         return {
-                            label: name,
-                            data: hours.map(h => { cumulative += data.today_hourly[h]?.[name] || 0; return Math.round(cumulative); }),
-                            borderColor: nameColors[name] || '#888',
-                            backgroundColor: 'transparent',
-                            tension: 0.3
+                            label: name, data: hours.map(h => { cumulative += data.today_hourly[h]?.[name] || 0; return Math.round(cumulative); }),
+                            borderColor: nameColors[name] || '#888', backgroundColor: 'transparent', tension: 0.3
                         };
                     });
                     if (todayLineChart) todayLineChart.destroy();
                     todayLineChart = new Chart(document.getElementById('todayLineChart'), {
-                        type: 'line',
-                        data: { labels: hours.map(h => h + ':00'), datasets },
+                        type: 'line', data: { labels: hours.map(h => h + ':00'), datasets },
                         options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                     });
-                }
 
-                // 本日の棒グラフ（時間帯別）
-                if (data.today_hourly) {
-                    const hours = Object.keys(data.today_hourly).sort();
-                    const datasets = names.map(name => ({
-                        label: name,
-                        data: hours.map(h => Math.round(data.today_hourly[h]?.[name] || 0)),
-                        backgroundColor: nameColors[name] || '#888'
+                    const barDatasets = names.map(name => ({
+                        label: name, data: hours.map(h => Math.round(data.today_hourly[h]?.[name] || 0)), backgroundColor: nameColors[name] || '#888'
                     }));
                     if (todayBarChart) todayBarChart.destroy();
                     todayBarChart = new Chart(document.getElementById('todayBarChart'), {
-                        type: 'bar',
-                        data: { labels: hours.map(h => h + ':00'), datasets },
+                        type: 'bar', data: { labels: hours.map(h => h + ':00'), datasets: barDatasets },
                         options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } }, y: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                     });
                 }
 
-                // 週間の折れ線グラフ
                 const dates = Object.keys(data.daily).sort();
                 const weekDatasets = names.map(name => ({
-                    label: name,
-                    data: dates.map(d => Math.round(data.daily[d]?.[name] || 0)),
-                    borderColor: nameColors[name] || '#888',
-                    backgroundColor: 'transparent',
-                    tension: 0.3
+                    label: name, data: dates.map(d => Math.round(data.daily[d]?.[name] || 0)),
+                    borderColor: nameColors[name] || '#888', backgroundColor: 'transparent', tension: 0.3
                 }));
                 if (weeklyChart) weeklyChart.destroy();
                 weeklyChart = new Chart(document.getElementById('weeklyChart'), {
-                    type: 'line',
-                    data: { labels: dates.map(d => d.slice(5)), datasets: weekDatasets },
+                    type: 'line', data: { labels: dates.map(d => d.slice(5)), datasets: weekDatasets },
                     options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                 });
 
-                // 最近の検出ログ
                 const recentHtml = data.recent.slice(0, 20).map(e => {
                     const color = nameColors[e.name] || '#888';
-                    return `<div style="padding:5px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;">
-                        <span>${e.timestamp}</span><span style="color:${color};">${e.name}</span>
-                    </div>`;
+                    return `<div style="padding:5px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;"><span>${e.timestamp}</span><span style="color:${color};">${e.name}</span></div>`;
                 }).join('');
                 document.getElementById('recentActivity').innerHTML = recentHtml || '<p style="color:#888;padding:10px;">データなし</p>';
             });
@@ -1292,37 +1165,25 @@ HTML_TEMPLATE = """
         function loadServiceStatus() {
             fetch('/api/service_status').then(r => r.json()).then(data => {
                 const el = document.getElementById('serviceStatus');
-                if (data.running) {
-                    el.textContent = '稼働中';
-                    el.style.background = '#4ecdc4';
-                    el.style.color = '#000';
-                } else {
-                    el.textContent = '停止中';
-                    el.style.background = '#ff6b6b';
-                    el.style.color = '#fff';
-                }
+                if (data.running) { el.textContent = '稼働中'; el.style.background = '#4ecdc4'; el.style.color = '#000'; }
+                else { el.textContent = '停止中'; el.style.background = '#ff6b6b'; el.style.color = '#fff'; }
             });
         }
 
         function serviceControl(action) {
-            fetch('/api/service_control', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action})
-            }).then(r => r.json()).then(data => {
-                setTimeout(loadServiceStatus, 1000);
-                if (data.error) alert(data.error);
-            });
+            fetch('/api/service_control', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action}) })
+            .then(r => r.json()).then(data => { setTimeout(loadServiceStatus, 1000); if (data.error) alert(data.error); });
         }
 
         function loadConfig() {
             fetch('/api/config').then(r => r.json()).then(cfg => {
                 document.getElementById('cfgModel').value = cfg.face_model || 'hog';
                 document.getElementById('cfgUpsample').value = cfg.upsample || 0;
-                document.getElementById('cfgResize').value = cfg.resize_width || 640;
                 document.getElementById('cfgInterval').value = cfg.interval_sec || 5;
                 document.getElementById('cfgTolerance').value = cfg.tolerance || 0.5;
-                document.getElementById('cfgUseRoi').value = cfg.use_roi ? 'true' : 'false';
+                if (cfg.roi_index !== undefined && cfg.roi_index !== null && cfg.roi_index !== '') {
+                    setTimeout(() => { document.getElementById('cfgRoiSelect').value = cfg.roi_index; }, 500);
+                }
             });
         }
 
@@ -1330,31 +1191,18 @@ HTML_TEMPLATE = """
             const cfg = {
                 face_model: document.getElementById('cfgModel').value,
                 upsample: parseInt(document.getElementById('cfgUpsample').value),
-                resize_width: parseInt(document.getElementById('cfgResize').value),
                 interval_sec: parseInt(document.getElementById('cfgInterval').value),
                 tolerance: parseFloat(document.getElementById('cfgTolerance').value),
-                use_roi: document.getElementById('cfgUseRoi').value === 'true'
+                roi_index: document.getElementById('cfgRoiSelect').value
             };
-            fetch('/api/config', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(cfg)
-            }).then(r => r.json()).then(data => {
+            fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(cfg) })
+            .then(r => r.json()).then(data => {
                 const st = document.getElementById('configStatus');
-                if (data.success) {
-                    st.textContent = '保存しました（再起動で反映）';
-                    st.style.color = '#4ecdc4';
-                } else {
-                    st.textContent = 'エラー: ' + data.error;
-                    st.style.color = '#ff6b6b';
-                }
+                if (data.success) { st.textContent = '保存しました（再起動で反映）'; st.style.color = '#4ecdc4'; }
+                else { st.textContent = 'エラー: ' + data.error; st.style.color = '#ff6b6b'; }
                 setTimeout(() => st.textContent = '', 3000);
             });
         }
-
-        // 初期化
-        checkCameraStatus();
-        loadCaptures();
     </script>
 </body>
 </html>
@@ -1364,7 +1212,6 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-# カメラ開始（顔認識サービスを停止）
 @app.route("/start_camera", methods=["POST"])
 def start_camera():
     if is_service_running():
@@ -1373,17 +1220,10 @@ def start_camera():
     get_camera()
     return jsonify({"success": True})
 
-# カメラ状態確認
 @app.route("/camera_status")
 def camera_status():
-    service_running = is_service_running()
-    camera_available = camera is not None and camera.isOpened()
-    return jsonify({
-        "service_running": service_running,
-        "camera_available": camera_available
-    })
+    return jsonify({"service_running": is_service_running(), "camera_available": camera is not None and camera.isOpened()})
 
-# ストリーミング
 def gen_frames():
     global camera
     while True:
@@ -1403,22 +1243,10 @@ def gen_frames():
 def stream():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route("/snapshot")
-def snapshot():
-    if is_service_running():
-        return jsonify({"error": "顔認識サービス稼働中"}), 503
-    cam = get_camera()
-    ret, frame = cam.read()
-    if not ret:
-        return "Camera error", 500
-    _, jpeg = cv2.imencode('.jpg', frame)
-    return Response(jpeg.tobytes(), mimetype='image/jpeg')
-
-# 撮影
 @app.route("/capture", methods=["POST"])
 def capture():
     if is_service_running():
-        return jsonify({"success": False, "error": "顔認識サービス稼働中。カメラタブで「カメラ開始」を押してください"})
+        return jsonify({"success": False, "error": "顔認識サービス稼働中"})
     cam = get_camera()
     ret, frame = cam.read()
     if not ret:
@@ -1447,36 +1275,18 @@ def delete_capture():
         os.remove(path)
     return jsonify({"success": True})
 
-def get_roi_by_index(roi_index):
-    """ROIインデックスからROIを取得"""
-    if roi_index == "" or roi_index is None:
-        return None
-    try:
-        idx = int(roi_index)
-        config = load_config()
-        presets = config.get("roi_presets", [])
-        if 0 <= idx < len(presets):
-            return presets[idx]
-    except (ValueError, TypeError):
-        pass
-    return None
-
 @app.route("/thumbnail_roi/<filename>")
 def thumbnail_roi(filename):
     path = os.path.join(CAPTURES_DIR, filename)
     if not os.path.exists(path):
         return "Not found", 404
-
     roi_index = request.args.get("roi_index", "")
     roi = get_roi_by_index(roi_index)
-
     img = cv2.imread(path)
     h, w = img.shape[:2]
-
     thumb_size = 200
     scale = thumb_size / max(h, w)
     thumb = cv2.resize(img, (int(w * scale), int(h * scale)))
-
     if roi:
         x = int(roi["x"] * scale)
         y = int(roi["y"] * scale)
@@ -1484,30 +1294,22 @@ def thumbnail_roi(filename):
         rh = int(roi["h"] * scale)
         overlay = thumb.copy()
         cv2.rectangle(overlay, (0, 0), (thumb.shape[1], thumb.shape[0]), (0, 0, 0), -1)
-        cv2.rectangle(overlay, (x, y), (x + rw, y + rh), (0, 0, 0), -1)
         mask = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
         mask[y:y+rh, x:x+rw] = 0
         mask[mask > 0] = 128
-        thumb = cv2.addWeighted(thumb, 1, overlay, 0, 0)
         dark = thumb.copy()
         dark[mask > 0] = (dark[mask > 0] * 0.4).astype('uint8')
         thumb = dark
         cv2.rectangle(thumb, (x, y), (x + rw, y + rh), (0, 212, 255), 2)
-
     _, jpeg = cv2.imencode('.jpg', thumb, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
-# ROI API - 複数ROI対応
+# ROI API
 @app.route("/api/roi_presets")
 def api_roi_presets():
     config = load_config()
     presets = config.get("roi_presets", [])
-    activeIndex = config.get("roi_active_index", -1)
-    # 後方互換性: 単一ROIがあればプリセットに追加
-    if not presets and config.get("roi"):
-        presets = [config["roi"]]
-        activeIndex = 0
-    return jsonify({"presets": presets, "activeIndex": activeIndex})
+    return jsonify({"presets": presets})
 
 @app.route("/api/roi_presets/add", methods=["POST"])
 def api_roi_preset_add():
@@ -1515,10 +1317,7 @@ def api_roi_preset_add():
     roi = request.json.get("roi")
     if not roi:
         return jsonify({"success": False, "error": "ROIが必要です"})
-
     presets = config.get("roi_presets", [])
-
-    # 既存のROI番号から次の番号を決定
     max_num = 0
     for p in presets:
         name = p.get("name", "")
@@ -1529,73 +1328,30 @@ def api_roi_preset_add():
             except:
                 pass
     roi["name"] = f"ROI {max_num + 1}"
-
     presets.append(roi)
     config["roi_presets"] = presets
     save_config(config)
     return jsonify({"success": True, "name": roi["name"]})
-
-@app.route("/api/roi_presets/select", methods=["POST"])
-def api_roi_preset_select():
-    config = load_config()
-    index = request.json.get("index", -1)
-    presets = config.get("roi_presets", [])
-
-    if 0 <= index < len(presets):
-        config["roi_active_index"] = index
-        config["roi"] = presets[index]  # 後方互換性
-        save_config(config)
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "無効なインデックス"})
 
 @app.route("/api/roi_presets/delete", methods=["POST"])
 def api_roi_preset_delete():
     config = load_config()
     index = request.json.get("index", -1)
     presets = config.get("roi_presets", [])
-
     if 0 <= index < len(presets):
         presets.pop(index)
         config["roi_presets"] = presets
-        # アクティブインデックス調整
-        activeIndex = config.get("roi_active_index", -1)
-        if activeIndex >= len(presets):
-            activeIndex = len(presets) - 1
-        if activeIndex == index:
-            activeIndex = -1
-        elif activeIndex > index:
-            activeIndex -= 1
-        config["roi_active_index"] = activeIndex
-        config["roi"] = presets[activeIndex] if activeIndex >= 0 else None
         save_config(config)
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "無効なインデックス"})
 
-@app.route("/get_roi")
-def get_roi():
-    config = load_config()
-    return jsonify({"roi": config.get("roi")})
-
-@app.route("/save_roi", methods=["POST"])
-def save_roi():
-    config = load_config()
-    config["roi"] = request.json.get("roi")
-    save_config(config)
-    return jsonify({"success": True})
-
-# 顔検出
-last_detect_result = None
-last_detect_image = None
-last_detect_use_roi = True
-
-@app.route("/detect_faces_only", methods=["POST"])
-def detect_faces_only():
-    """顔登録用の検出エンドポイント"""
+# 顔抽出
+@app.route("/extract_and_save_faces", methods=["POST"])
+def extract_and_save_faces():
     data = request.json
     image = data.get("image")
     model = data.get("model", "hog")
     upsample = data.get("upsample", 2)
-    resize = data.get("resize", 640)
     roi_index = data.get("roi_index", "")
 
     path = os.path.join(CAPTURES_DIR, image)
@@ -1613,249 +1369,35 @@ def detect_faces_only():
         img_roi = img
         roi_offset = (0, 0)
 
-    h_roi, w_roi = img_roi.shape[:2]
-    if resize > 0 and max(h_roi, w_roi) > resize:
-        scale = resize / max(h_roi, w_roi)
-        small = cv2.resize(img_roi, (int(w_roi * scale), int(h_roi * scale)))
-    else:
-        scale = 1.0
-        small = img_roi
-
-    rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+    rgb = cv2.cvtColor(img_roi, cv2.COLOR_BGR2RGB)
     face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
 
-    faces = []
-    for (top, right, bottom, left) in face_locations:
-        faces.append({"top": top, "right": right, "bottom": bottom, "left": left})
-
-    return jsonify({"success": True, "faces": faces, "image": image})
-
-# 顔認識テスト
-last_recog_result = None
-last_recog_image = None
-
-@app.route("/recognize", methods=["POST"])
-def recognize():
-    global last_recog_result, last_recog_image
-    data = request.json
-    image = data.get("image")
-    model = data.get("model", "hog")
-    upsample = data.get("upsample", 2)
-    tolerance = data.get("tolerance", 0.5)
-    roi_index = data.get("roi_index", "")
-
-    path = os.path.join(CAPTURES_DIR, image)
-    if not os.path.exists(path):
-        return jsonify({"success": False, "error": "画像が見つかりません"})
-
-    # エンコーディング読み込み
-    if not os.path.exists(ENCODINGS_PATH):
-        return jsonify({"success": False, "error": "エンコーディングファイルがありません。顔登録タブでエンコーディングを生成してください"})
-
-    try:
-        with open(ENCODINGS_PATH, "rb") as f:
-            enc_data = pickle.load(f)
-        known_names = enc_data.get("names", [])
-        known_encodings = enc_data.get("encodings", [])
-        if not known_names:
-            return jsonify({"success": False, "error": "登録された顔がありません"})
-    except:
-        return jsonify({"success": False, "error": "エンコーディングの読み込みに失敗しました"})
-
-    img = cv2.imread(path)
-    h, w = img.shape[:2]
-
-    roi = get_roi_by_index(roi_index)
-    roi_used = roi is not None
-
-    if roi:
-        x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
-        img_roi = img[y:y+rh, x:x+rw]
-        roi_offset = (x, y)
-    else:
-        img_roi = img
-        roi_offset = (0, 0)
-
-    h_roi, w_roi = img_roi.shape[:2]
-    resize = 640
-    if resize > 0 and max(h_roi, w_roi) > resize:
-        scale = resize / max(h_roi, w_roi)
-        small = cv2.resize(img_roi, (int(w_roi * scale), int(h_roi * scale)))
-    else:
-        scale = 1.0
-        small = img_roi
-
-    rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-
-    start = time.time()
-    face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
-    face_encodings = face_recognition.face_encodings(rgb, face_locations)
-    elapsed = round(time.time() - start, 2)
-
-    faces = []
-    for i, (enc, (top, right, bottom, left)) in enumerate(zip(face_encodings, face_locations)):
-        # 座標を元画像に変換
-        top = int(top / scale) + roi_offset[1]
-        right = int(right / scale) + roi_offset[0]
-        bottom = int(bottom / scale) + roi_offset[1]
-        left = int(left / scale) + roi_offset[0]
-
-        # 顔認識
-        distances = face_recognition.face_distance(known_encodings, enc)
-        if len(distances) == 0:
-            name = "unknown"
-            min_distance = 1.0
-        else:
-            min_idx = distances.argmin()
-            min_distance = distances[min_idx]
-            if min_distance <= tolerance:
-                name = known_names[min_idx]
-            else:
-                name = "unknown"
-
-        faces.append({"name": name, "distance": float(min_distance)})
-
-        # 描画
-        color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
-        cv2.rectangle(img, (left, top), (right, bottom), color, 2)
-        cv2.putText(img, f"{name} ({min_distance:.2f})", (left, top - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-    if roi:
-        cv2.rectangle(img, (roi["x"], roi["y"]), (roi["x"]+roi["w"], roi["y"]+roi["h"]), (0, 212, 255), 2)
-
-    last_recog_result = img
-    last_recog_image = image
-
-    return jsonify({"success": True, "faces": faces, "time": elapsed, "image": image, "roi_used": roi_used})
-
-@app.route("/recog_result")
-def recog_result():
-    if last_recog_result is None:
-        return "No result", 404
-    _, jpeg = cv2.imencode('.jpg', last_recog_result)
-    return Response(jpeg.tobytes(), mimetype='image/jpeg')
-
-@app.route("/face_crop/<image>/<int:idx>")
-def face_crop(image, idx):
-    path = os.path.join(CAPTURES_DIR, image)
-    if not os.path.exists(path):
-        return "Not found", 404
-
-    roi_index = request.args.get("roi_index", "")
-    model = request.args.get("model", "hog")
-    upsample = int(request.args.get("upsample", "2"))
-    resize = int(request.args.get("resize", "640"))
-
-    img = cv2.imread(path)
-    roi = get_roi_by_index(roi_index)
-
-    if roi:
-        x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
-        img_roi = img[y:y+rh, x:x+rw]
-        roi_offset = (x, y)
-    else:
-        img_roi = img
-        roi_offset = (0, 0)
-
-    h_roi, w_roi = img_roi.shape[:2]
-    if resize > 0 and max(h_roi, w_roi) > resize:
-        scale = resize / max(h_roi, w_roi)
-        small = cv2.resize(img_roi, (int(w_roi * scale), int(h_roi * scale)))
-    else:
-        scale = 1.0
-        small = img_roi
-
-    rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-    face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
-
-    if idx >= len(face_locations):
-        return "Not found", 404
-
-    top, right, bottom, left = face_locations[idx]
-    top = int(top / scale) + roi_offset[1]
-    right = int(right / scale) + roi_offset[0]
-    bottom = int(bottom / scale) + roi_offset[1]
-    left = int(left / scale) + roi_offset[0]
-
-    margin = int((bottom - top) * 0.3)
-    top = max(0, top - margin)
-    left = max(0, left - margin)
-    bottom = min(img.shape[0], bottom + margin)
-    right = min(img.shape[1], right + margin)
-
-    face_img = img[top:bottom, left:right]
-    _, jpeg = cv2.imencode('.jpg', face_img)
-    return Response(jpeg.tobytes(), mimetype='image/jpeg')
-
-@app.route("/save_face", methods=["POST"])
-def save_face():
-    data = request.json
-    image = data.get("image")
-    idx = data.get("idx")
-    label = data.get("label", "").strip().lower()
-    roi_index = data.get("roi_index", "")
-    model = data.get("model", "hog")
-    upsample = data.get("upsample", 2)
-    resize = data.get("resize", 640)
-
-    if not label:
-        return jsonify({"success": False, "error": "ラベルが必要です"})
-
-    path = os.path.join(CAPTURES_DIR, image)
-    if not os.path.exists(path):
-        return jsonify({"success": False, "error": "画像が見つかりません"})
-
-    img = cv2.imread(path)
-    roi = get_roi_by_index(roi_index)
-
-    if roi:
-        x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
-        img_roi = img[y:y+rh, x:x+rw]
-        roi_offset = (x, y)
-    else:
-        img_roi = img
-        roi_offset = (0, 0)
-
-    h_roi, w_roi = img_roi.shape[:2]
-    if resize > 0 and max(h_roi, w_roi) > resize:
-        scale = resize / max(h_roi, w_roi)
-        small = cv2.resize(img_roi, (int(w_roi * scale), int(h_roi * scale)))
-    else:
-        scale = 1.0
-        small = img_roi
-
-    rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-    face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
-
-    if idx >= len(face_locations):
-        return jsonify({"success": False, "error": "顔が見つかりません"})
-
-    top, right, bottom, left = face_locations[idx]
-    top = int(top / scale) + roi_offset[1]
-    right = int(right / scale) + roi_offset[0]
-    bottom = int(bottom / scale) + roi_offset[1]
-    left = int(left / scale) + roi_offset[0]
-
-    margin = int((bottom - top) * 0.3)
-    top = max(0, top - margin)
-    left = max(0, left - margin)
-    bottom = min(img.shape[0], bottom + margin)
-    right = min(img.shape[1], right + margin)
-
-    face_img = img[top:bottom, left:right]
+    count = 0
     import uuid
-    filename = f"face_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
-    cv2.imwrite(os.path.join(FACES_DIR, filename), face_img)
+    for (top, right, bottom, left) in face_locations:
+        top += roi_offset[1]
+        right += roi_offset[0]
+        bottom += roi_offset[1]
+        left += roi_offset[0]
 
-    meta_path = os.path.join(FACES_DIR, filename + ".json")
-    with open(meta_path, "w") as f:
-        json.dump({"source": image, "label": label}, f)
+        margin = int((bottom - top) * 0.3)
+        top = max(0, top - margin)
+        left = max(0, left - margin)
+        bottom = min(img.shape[0], bottom + margin)
+        right = min(img.shape[1], right + margin)
 
-    return jsonify({"success": True, "filename": filename})
+        face_img = img[top:bottom, left:right]
+        filename = f"face_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
+        cv2.imwrite(os.path.join(FACES_DIR, filename), face_img)
+        # メタデータ（未登録状態）
+        with open(os.path.join(FACES_DIR, filename + ".json"), "w") as f:
+            json.dump({"source": image, "label": ""}, f)
+        count += 1
 
-@app.route("/faces")
-def faces():
+    return jsonify({"success": True, "count": count})
+
+@app.route("/all_faces_status")
+def all_faces_status():
     files = sorted(glob.glob(os.path.join(FACES_DIR, "*.jpg")), reverse=True)
     result = []
     for f in files:
@@ -1868,72 +1410,63 @@ def faces():
         result.append({"filename": filename, "label": label})
     return jsonify(result)
 
-@app.route("/face_image/<filename>")
-def face_image(filename):
-    path = os.path.join(FACES_DIR, filename)
-    if os.path.exists(path):
-        return send_file(path, mimetype='image/jpeg')
-    return "Not found", 404
+@app.route("/unregistered_faces")
+def unregistered_faces():
+    files = sorted(glob.glob(os.path.join(FACES_DIR, "*.jpg")), reverse=True)
+    result = []
+    for f in files:
+        meta_path = f + ".json"
+        if os.path.exists(meta_path):
+            with open(meta_path) as mf:
+                if not json.load(mf).get("label"):
+                    result.append(os.path.basename(f))
+        else:
+            result.append(os.path.basename(f))
+    return jsonify(result)
 
-@app.route("/delete_face", methods=["POST"])
-def delete_face():
-    filename = request.json.get("filename")
-    path = os.path.join(FACES_DIR, filename)
-    meta_path = path + ".json"
-    if os.path.exists(path):
-        os.remove(path)
-    if os.path.exists(meta_path):
-        os.remove(meta_path)
-    return jsonify({"success": True})
-
-@app.route("/labeled_faces_status")
-def labeled_faces_status():
-    """ラベル別の写真一覧とエンコーディング状態を返す"""
+@app.route("/registered_faces_by_label")
+def registered_faces_by_label():
     files = glob.glob(os.path.join(FACES_DIR, "*.jpg"))
-
-    encoded_files = {}
-    if os.path.exists(ENCODINGS_PATH):
-        try:
-            with open(ENCODINGS_PATH, "rb") as f:
-                enc_data = pickle.load(f)
-                if "files" in enc_data:
-                    for label, filelist in enc_data["files"].items():
-                        encoded_files[label] = set(filelist)
-        except:
-            pass
-
     result = {}
     for f in files:
-        filename = os.path.basename(f)
         meta_path = f + ".json"
         if os.path.exists(meta_path):
             with open(meta_path) as mf:
                 label = json.load(mf).get("label", "")
                 if label:
                     if label not in result:
-                        result[label] = {"photos": [], "encoded": False, "newPhotos": 0, "encodedFiles": []}
-                    result[label]["photos"].append(filename)
-
-    for label in result:
-        if label in encoded_files:
-            result[label]["encoded"] = True
-            result[label]["encodedFiles"] = list(encoded_files[label])
-            current_photos = set(result[label]["photos"])
-            encoded_set = encoded_files[label]
-            result[label]["newPhotos"] = len(current_photos - encoded_set)
-        else:
-            result[label]["encoded"] = False
-            result[label]["newPhotos"] = len(result[label]["photos"])
-
+                        result[label] = []
+                    result[label].append(os.path.basename(f))
     return jsonify(result)
 
-@app.route("/build_encoding_for_label", methods=["POST"])
-def build_encoding_for_label():
-    """特定ラベルのエンコーディングを生成"""
-    target_label = request.json.get("label")
-    if not target_label:
-        return jsonify({"success": False, "error": "ラベルが必要です"})
+@app.route("/register_faces", methods=["POST"])
+def register_faces():
+    data = request.json
+    files = data.get("files", [])
+    label = data.get("label", "").strip().lower()
 
+    if not label:
+        return jsonify({"success": False, "error": "ラベルが必要です"})
+    if not files:
+        return jsonify({"success": False, "error": "ファイルを選択してください"})
+
+    count = 0
+    for filename in files:
+        meta_path = os.path.join(FACES_DIR, filename + ".json")
+        if os.path.exists(meta_path):
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+            meta["label"] = label
+            with open(meta_path, "w") as f:
+                json.dump(meta, f)
+            count += 1
+
+    # 自動エンコード
+    build_encoding_for_label_internal(label)
+
+    return jsonify({"success": True, "count": count})
+
+def build_encoding_for_label_internal(target_label):
     existing_data = {"names": [], "encodings": [], "files": {}}
     if os.path.exists(ENCODINGS_PATH):
         try:
@@ -1959,7 +1492,6 @@ def build_encoding_for_label():
 
     files = glob.glob(os.path.join(FACES_DIR, "*.jpg"))
     encoded_files_list = []
-    count = 0
 
     for f in files:
         meta_path = f + ".json"
@@ -1971,10 +1503,8 @@ def build_encoding_for_label():
             continue
 
         filename = os.path.basename(f)
-
         img = cv2.imread(f)
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
         face_locations = face_recognition.face_locations(rgb, model="hog", number_of_times_to_upsample=1)
 
         if len(face_locations) == 0:
@@ -1988,7 +1518,6 @@ def build_encoding_for_label():
             new_names.append(target_label)
             new_encodings.append(enc)
             encoded_files_list.append(filename)
-            count += 1
         except:
             continue
 
@@ -1998,7 +1527,129 @@ def build_encoding_for_label():
     with open(ENCODINGS_PATH, "wb") as f:
         pickle.dump({"names": new_names, "encodings": new_encodings, "files": new_files}, f)
 
-    return jsonify({"success": True, "count": count})
+@app.route("/face_image/<filename>")
+def face_image(filename):
+    path = os.path.join(FACES_DIR, filename)
+    if os.path.exists(path):
+        return send_file(path, mimetype='image/jpeg')
+    return "Not found", 404
+
+@app.route("/delete_face", methods=["POST"])
+def delete_face():
+    filename = request.json.get("filename")
+    path = os.path.join(FACES_DIR, filename)
+    meta_path = path + ".json"
+    if os.path.exists(path):
+        os.remove(path)
+    if os.path.exists(meta_path):
+        os.remove(meta_path)
+    return jsonify({"success": True})
+
+# 顔認識テスト
+last_recog_result = None
+last_recog_faces = []
+
+@app.route("/recognize", methods=["POST"])
+def recognize():
+    global last_recog_result, last_recog_faces
+    data = request.json
+    image = data.get("image")
+    model = data.get("model", "hog")
+    upsample = data.get("upsample", 2)
+    tolerance = data.get("tolerance", 0.5)
+    roi_index = data.get("roi_index", "")
+
+    path = os.path.join(CAPTURES_DIR, image)
+    if not os.path.exists(path):
+        return jsonify({"success": False, "error": "画像が見つかりません"})
+
+    if not os.path.exists(ENCODINGS_PATH):
+        return jsonify({"success": False, "error": "エンコーディングファイルがありません"})
+
+    try:
+        with open(ENCODINGS_PATH, "rb") as f:
+            enc_data = pickle.load(f)
+        known_names = enc_data.get("names", [])
+        known_encodings = enc_data.get("encodings", [])
+        if not known_names:
+            return jsonify({"success": False, "error": "登録された顔がありません"})
+    except:
+        return jsonify({"success": False, "error": "エンコーディングの読み込みに失敗しました"})
+
+    img = cv2.imread(path)
+    roi = get_roi_by_index(roi_index)
+    roi_used = roi is not None
+
+    if roi:
+        x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
+        img_roi = img[y:y+rh, x:x+rw]
+        roi_offset = (x, y)
+    else:
+        img_roi = img
+        roi_offset = (0, 0)
+
+    rgb = cv2.cvtColor(img_roi, cv2.COLOR_BGR2RGB)
+
+    start = time.time()
+    face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
+    face_encodings = face_recognition.face_encodings(rgb, face_locations)
+    elapsed = round(time.time() - start, 2)
+
+    faces = []
+    last_recog_faces = []
+
+    for i, (enc, (top, right, bottom, left)) in enumerate(zip(face_encodings, face_locations)):
+        orig_top = top + roi_offset[1]
+        orig_right = right + roi_offset[0]
+        orig_bottom = bottom + roi_offset[1]
+        orig_left = left + roi_offset[0]
+
+        distances = face_recognition.face_distance(known_encodings, enc)
+        if len(distances) == 0:
+            name = "unknown"
+            min_distance = 1.0
+        else:
+            min_idx = distances.argmin()
+            min_distance = distances[min_idx]
+            name = known_names[min_idx] if min_distance <= tolerance else "unknown"
+
+        faces.append({"name": name, "distance": float(min_distance)})
+
+        # 顔画像を保存
+        margin = int((orig_bottom - orig_top) * 0.2)
+        crop_top = max(0, orig_top - margin)
+        crop_left = max(0, orig_left - margin)
+        crop_bottom = min(img.shape[0], orig_bottom + margin)
+        crop_right = min(img.shape[1], orig_right + margin)
+        face_crop = img[crop_top:crop_bottom, crop_left:crop_right]
+        last_recog_faces.append(face_crop)
+
+        # 描画
+        color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
+        cv2.rectangle(img, (orig_left, orig_top), (orig_right, orig_bottom), color, 2)
+        cv2.putText(img, f"{name} ({min_distance:.2f})", (orig_left, orig_top - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+    if roi:
+        cv2.rectangle(img, (roi["x"], roi["y"]), (roi["x"]+roi["w"], roi["y"]+roi["h"]), (0, 212, 255), 2)
+
+    last_recog_result = img
+
+    return jsonify({"success": True, "faces": faces, "time": elapsed, "image": image, "roi_used": roi_used})
+
+@app.route("/recog_result")
+def recog_result():
+    if last_recog_result is None:
+        return "No result", 404
+    _, jpeg = cv2.imencode('.jpg', last_recog_result)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/recog_face/<int:idx>")
+def recog_face(idx):
+    if idx >= len(last_recog_faces):
+        return "Not found", 404
+    _, jpeg = cv2.imencode('.jpg', last_recog_faces[idx])
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
 # ダッシュボードAPI
 import csv
@@ -2012,7 +1663,6 @@ os.makedirs(DETECTIONS_DIR, exist_ok=True)
 
 @app.route("/api/dashboard")
 def api_dashboard():
-    """ダッシュボードデータを返す"""
     config = load_config()
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
     interval_sec = config.get("interval_sec", 5)
@@ -2049,7 +1699,7 @@ def api_dashboard():
                                 if 0 <= minute_idx < 60:
                                     barcode[name][minute_idx] = True
                         recent_entries.append({"timestamp": row["timestamp"], "name": name})
-                    except (ValueError, KeyError):
+                    except:
                         continue
         except:
             pass
@@ -2081,7 +1731,6 @@ def api_dashboard():
 
 @app.route("/detection_image/<filename>")
 def detection_image(filename):
-    """検出画像を返す"""
     path = os.path.join(DETECTIONS_DIR, filename)
     if os.path.exists(path):
         return send_file(path, mimetype='image/jpeg')
@@ -2089,12 +1738,8 @@ def detection_image(filename):
 
 @app.route("/api/service_status")
 def api_service_status():
-    """顔認識サービスの状態を返す"""
     try:
-        result = subprocess.run(
-            ["systemctl", "is-active", "tv-watch-tracker"],
-            capture_output=True, text=True
-        )
+        result = subprocess.run(["systemctl", "is-active", "tv-watch-tracker"], capture_output=True, text=True)
         running = result.stdout.strip() == "active"
     except:
         running = False
@@ -2102,19 +1747,13 @@ def api_service_status():
 
 @app.route("/api/service_control", methods=["POST"])
 def api_service_control():
-    """顔認識サービスを制御"""
     action = request.json.get("action")
     if action not in ["start", "stop", "restart"]:
         return jsonify({"error": "Invalid action"})
-
     try:
         if action in ["start", "restart"]:
             release_camera()
-
-        result = subprocess.run(
-            ["sudo", "systemctl", action, "tv-watch-tracker"],
-            capture_output=True, text=True
-        )
+        result = subprocess.run(["sudo", "systemctl", action, "tv-watch-tracker"], capture_output=True, text=True)
         if result.returncode != 0:
             return jsonify({"error": result.stderr})
         return jsonify({"success": True})
@@ -2123,16 +1762,14 @@ def api_service_control():
 
 @app.route("/api/config")
 def api_get_config():
-    """設定を取得"""
     return jsonify(load_config())
 
 @app.route("/api/config", methods=["POST"])
 def api_save_config():
-    """設定を保存"""
     try:
         config = load_config()
         updates = request.json
-        for key in ["face_model", "upsample", "resize_width", "interval_sec", "tolerance", "use_roi"]:
+        for key in ["face_model", "upsample", "interval_sec", "tolerance", "roi_index"]:
             if key in updates:
                 config[key] = updates[key]
         save_config(config)
