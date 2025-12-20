@@ -415,7 +415,7 @@ HTML_TEMPLATE = """
                 <div class="grid" id="detectImageGrid"></div>
                 <input type="hidden" id="detectImage" value="">
                 <div style="margin-top:15px;">
-                    <button class="btn btn-primary" onclick="runDetection()">顔検出実行</button>
+                    <button class="btn btn-primary" onclick="runDetection(this)">顔検出実行</button>
                 </div>
                 <div id="detectStatus"></div>
                 <div id="detectResult" style="margin-top:15px;text-align:center;"></div>
@@ -484,7 +484,7 @@ HTML_TEMPLATE = """
                 <div class="grid" id="recogImageGrid"></div>
                 <input type="hidden" id="recogImage" value="">
                 <div style="margin-top:15px;">
-                    <button class="btn btn-primary" onclick="runRecognition()">顔認識実行</button>
+                    <button class="btn btn-primary" onclick="runRecognition(this)">顔認識実行</button>
                 </div>
                 <div id="recogStatus"></div>
                 <div class="detection-result" id="recogResult"></div>
@@ -1165,7 +1165,7 @@ HTML_TEMPLATE = """
             document.getElementById('detectImage').value = filename;
         }
 
-        function runDetection() {
+        function runDetection(btn) {
             const image = document.getElementById('detectImage').value;
             const model = document.getElementById('detectModel').value;
             const upsample = document.getElementById('detectUpsample').value;
@@ -1173,7 +1173,6 @@ HTML_TEMPLATE = """
             if (!image) { alert('画像を選択してください'); return; }
             const msg = model === 'cnn' ? '検出中（CNNは時間がかかります）...' : '検出中...';
             showStatus('detectStatus', msg, 'info');
-            const btn = event.target;
             btn.disabled = true;
             btn.textContent = '処理中...';
 
@@ -1274,7 +1273,7 @@ HTML_TEMPLATE = """
             document.getElementById('recogImage').value = filename;
         }
 
-        function runRecognition() {
+        function runRecognition(btn) {
             const image = document.getElementById('recogImage').value;
             const model = document.getElementById('recogModel').value;
             const upsample = document.getElementById('recogUpsample').value;
@@ -1283,7 +1282,6 @@ HTML_TEMPLATE = """
             if (!image) { alert('画像を選択してください'); return; }
             const msg = model === 'cnn' ? '認識中（CNNは時間がかかります）...' : '認識中...';
             showStatus('recogStatus', msg, 'info');
-            const btn = event.target;
             btn.disabled = true;
             btn.textContent = '処理中...';
 
