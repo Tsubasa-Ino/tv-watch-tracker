@@ -192,6 +192,13 @@ HTML_TEMPLATE = """
         .face-item { position: relative; display: inline-block; margin: 5px; }
         .face-item img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; }
         .face-item.selected img { outline: 3px solid #00d4ff; }
+        .face-item .delete-btn {
+            position: absolute; top: -5px; right: -5px;
+            background: rgba(255,107,107,0.9); color: #fff;
+            border: none; border-radius: 50%; width: 20px; height: 20px;
+            cursor: pointer; display: none; font-size: 12px; line-height: 20px; text-align: center;
+        }
+        .face-item:hover .delete-btn { display: block; }
         .face-item .badge {
             position: absolute; top: 3px; left: 3px;
             padding: 2px 6px; border-radius: 4px; font-size: 0.6em;
@@ -373,8 +380,8 @@ HTML_TEMPLATE = """
             <!-- テスト種別選択 -->
             <div style="display:flex;gap:10px;margin-bottom:15px;">
                 <button class="btn btn-secondary" id="testTypeDetect" onclick="switchTestType('detect')" style="flex:1;">顔検出</button>
-                <button class="btn btn-secondary" id="testTypeRecog" onclick="switchTestType('recog')" style="flex:1;">顔認識</button>
-                <button class="btn btn-primary" id="testTypeAll" onclick="switchTestType('all')" style="flex:1;">総合テスト</button>
+                <button class="btn btn-secondary" id="testTypeRecog" onclick="switchTestType('recog')" style="flex:1;">顔判定</button>
+                <button class="btn btn-primary" id="testTypeAll" onclick="switchTestType('all')" style="flex:1;">顔認識</button>
             </div>
 
             <!-- 顔検出テスト -->
@@ -414,9 +421,9 @@ HTML_TEMPLATE = """
                 <div id="detectResult" style="margin-top:15px;text-align:center;"></div>
             </div>
 
-            <!-- 顔認識テスト -->
+            <!-- 顔判定テスト -->
             <div id="testRecog" class="card" style="display:none;">
-                <h2>顔認識テスト</h2>
+                <h2>顔判定テスト</h2>
                 <p style="color:#888;margin-bottom:15px;">抽出済みの顔画像から誰か判定</p>
                 <div class="params">
                     <div class="form-group">
@@ -432,16 +439,16 @@ HTML_TEMPLATE = """
                 <div id="recogFaceGrid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
                 <input type="hidden" id="recogFaceFile" value="">
                 <div style="margin-top:15px;">
-                    <button class="btn btn-primary" onclick="runRecogOnly()">顔認識実行</button>
+                    <button class="btn btn-primary" onclick="runRecogOnly()">顔判定実行</button>
                 </div>
                 <div id="recogOnlyStatus"></div>
                 <div id="recogOnlyResult" style="margin-top:15px;"></div>
             </div>
 
-            <!-- 総合テスト -->
+            <!-- 顔認識テスト -->
             <div id="testAll" class="card">
-                <h2>総合テスト</h2>
-                <p style="color:#888;margin-bottom:15px;">カメラ画像から顔検出＋認識を実行</p>
+                <h2>顔認識テスト</h2>
+                <p style="color:#888;margin-bottom:15px;">カメラ画像から顔検出＋判定を実行</p>
                 <div class="params">
                     <div class="form-group">
                         <label>検出モデル</label>
@@ -477,7 +484,7 @@ HTML_TEMPLATE = """
                 <div class="grid" id="recogImageGrid"></div>
                 <input type="hidden" id="recogImage" value="">
                 <div style="margin-top:15px;">
-                    <button class="btn btn-primary" onclick="runRecognition()">総合テスト実行</button>
+                    <button class="btn btn-primary" onclick="runRecognition()">顔認識実行</button>
                 </div>
                 <div id="recogStatus"></div>
                 <div class="detection-result" id="recogResult"></div>
@@ -539,8 +546,10 @@ HTML_TEMPLATE = """
         <div id="dashboard" class="tab-content">
             <div class="card">
                 <h2>直近の画像</h2>
-                <div style="margin-bottom:10px;">
+                <div style="margin-bottom:10px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
                     <label><input type="checkbox" id="showRoi" checked onchange="updateLatestImage()"> ROI表示</label>
+                    <label><input type="checkbox" id="showBbox" checked onchange="updateLatestImage()"> BBox表示</label>
+                    <span id="roiNameDisplay" style="color:#4ecdc4;font-size:0.9em;"></span>
                 </div>
                 <div id="latestImageContainer" style="text-align:center;">
                     <img id="latestImage" src="" style="max-width:100%;border-radius:8px;display:none;">
@@ -600,6 +609,7 @@ HTML_TEMPLATE = """
         let roiDrawing = false;
         let roiStart = {x: 0, y: 0};
         let modalImagePath = '';
+        let modalImageType = 'capture';  // 'capture' or 'face'
         let selectedRoiImage = '';
         let roiPresets = [];
         let currentTab = 'camera';
@@ -948,10 +958,10 @@ HTML_TEMPLATE = """
                     return;
                 }
                 container.innerHTML = data.map(f => `
-                    <div class="face-item" style="position:relative;">
+                    <div class="face-item">
                         <img src="/face_image/${f.filename}" onclick="openFaceModal('${f.filename}')">
                         <span class="badge ${f.label ? 'badge-registered' : 'badge-unregistered'}">${f.label || '未登録'}</span>
-                        <button class="delete-btn" style="display:block;top:-5px;right:-5px;width:20px;height:20px;font-size:12px;line-height:20px;" onclick="event.stopPropagation();deleteFace('${f.filename}')">&times;</button>
+                        <button class="delete-btn" onclick="event.stopPropagation();deleteFace('${f.filename}')">&times;</button>
                     </div>
                 `).join('');
             });
@@ -959,6 +969,7 @@ HTML_TEMPLATE = """
 
         function openFaceModal(filename) {
             modalImagePath = filename;
+            modalImageType = 'face';
             document.getElementById('modalImage').src = '/face_image/' + filename;
             document.getElementById('modal').classList.add('active');
         }
@@ -1042,9 +1053,9 @@ HTML_TEMPLATE = """
                         <div class="label-group">
                             <h4>${label} (${files.length}枚) ${statusIcon}</h4>
                             <div>${files.map(f => `
-                                <div class="face-item" style="position:relative;">
+                                <div class="face-item">
                                     <img src="/face_image/${f}" onclick="openFaceModal('${f}')">
-                                    <button class="delete-btn" style="display:block;top:-5px;right:-5px;width:20px;height:20px;font-size:12px;line-height:20px;" onclick="event.stopPropagation();deleteFace('${f}')">&times;</button>
+                                    <button class="delete-btn" onclick="event.stopPropagation();deleteFace('${f}')">&times;</button>
                                 </div>
                             `).join('')}</div>
                         </div>
@@ -1297,6 +1308,7 @@ HTML_TEMPLATE = """
         // モーダル
         function showModal(src, path) {
             modalImagePath = path;
+            modalImageType = 'capture';
             document.getElementById('modalImage').src = src;
             document.getElementById('modal').classList.add('active');
         }
@@ -1305,11 +1317,24 @@ HTML_TEMPLATE = """
 
         function deleteModalImage() {
             if (!confirm('削除しますか？')) return;
-            fetch('/delete_capture', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filename: modalImagePath})
-            }).then(() => { closeModal(); loadCaptures(); });
+            if (modalImageType === 'face') {
+                fetch('/delete_face', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: modalImagePath})
+                }).then(() => {
+                    closeModal();
+                    loadExtractedFaces();
+                    loadUnregisteredFaces();
+                    loadRegisteredFaces();
+                });
+            } else {
+                fetch('/delete_capture', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: modalImagePath})
+                }).then(() => { closeModal(); loadCaptures(); });
+            }
         }
 
         // ダッシュボード
@@ -1340,7 +1365,8 @@ HTML_TEMPLATE = """
         function updateLatestImage() {
             if (!latestImageFilename) return;
             const showRoi = document.getElementById('showRoi').checked;
-            document.getElementById('latestImage').src = `/api/latest_image?roi=${showRoi}&t=${Date.now()}`;
+            const showBbox = document.getElementById('showBbox').checked;
+            document.getElementById('latestImage').src = `/api/latest_image?roi=${showRoi}&bbox=${showBbox}&t=${Date.now()}`;
         }
 
         function loadDashboard() {
@@ -1348,7 +1374,11 @@ HTML_TEMPLATE = """
                 const today = new Date().toISOString().slice(0, 10);
                 const names = data.registered_labels || [];
 
-                // 直近の検出画像
+                // ROI名称表示
+                const roiName = data.roi_name || '';
+                document.getElementById('roiNameDisplay').textContent = roiName ? `ROI: ${roiName}` : '';
+
+                // 直近の画像
                 if (data.latest_image) {
                     latestImageFilename = data.latest_image;
                     document.getElementById('latestImage').style.display = 'block';
@@ -1471,7 +1501,27 @@ HTML_TEMPLATE = """
 
         function serviceControl(action) {
             fetch('/api/service_control', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action}) })
-            .then(r => r.json()).then(data => { setTimeout(loadServiceStatus, 1000); if (data.error) alert(data.error); });
+            .then(r => r.json()).then(data => {
+                setTimeout(loadServiceStatus, 1000);
+                if (data.error) {
+                    alert(data.error);
+                } else if (action === 'stop') {
+                    // サービス停止後、カメラタブにいる場合はプレビューを再開
+                    setTimeout(() => {
+                        if (currentTab === 'camera') {
+                            checkCameraStatus();
+                            // カメラプレビューを再開
+                            fetch('/start_camera', { method: 'POST' }).then(r => r.json()).then(d => {
+                                if (d.success) {
+                                    document.getElementById('cameraOverlay').style.display = 'none';
+                                    document.getElementById('cameraContainer').style.display = 'block';
+                                    document.getElementById('cameraPreview').src = '/stream?' + Date.now();
+                                }
+                            });
+                        }
+                    }, 500);
+                }
+            });
         }
 
         function loadConfig() {
@@ -2080,7 +2130,8 @@ def get_registered_labels():
     if os.path.exists(FACES_DIR):
         for f in os.listdir(FACES_DIR):
             if f.endswith('.jpg'):
-                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                # JSONファイルは .jpg.json の形式
+                json_path = os.path.join(FACES_DIR, f + '.json')
                 if os.path.exists(json_path):
                     try:
                         with open(json_path, 'r') as jf:
@@ -2097,7 +2148,8 @@ def get_first_registered_date():
     if os.path.exists(FACES_DIR):
         for f in os.listdir(FACES_DIR):
             if f.endswith('.jpg'):
-                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                # JSONファイルは .jpg.json の形式
+                json_path = os.path.join(FACES_DIR, f + '.json')
                 if os.path.exists(json_path):
                     try:
                         mtime = os.path.getmtime(json_path)
@@ -2177,27 +2229,58 @@ def api_dashboard():
 
     recent_grouped = recent_grouped[-50:][::-1]
 
-    # 直近の画像（capturesフォルダから）
+    # 直近の画像（detectionsフォルダ優先、なければcaptures）
     latest_image = None
-    if os.path.exists(CAPTURES_DIR):
+    if os.path.exists(DETECTIONS_DIR):
+        all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
+        if all_images:
+            latest_image = os.path.basename(all_images[0])
+            last_detection_image = all_images[0]
+            # メタデータがあれば読み込む
+            meta_path = all_images[0].replace('.jpg', '.json')
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path) as f:
+                        last_detection_meta = json.load(f)
+                except:
+                    last_detection_meta = None
+            else:
+                last_detection_meta = None
+
+    # detectionsがなければcapturesから
+    if not latest_image and os.path.exists(CAPTURES_DIR):
         all_images = sorted(glob.glob(os.path.join(CAPTURES_DIR, "*.jpg")), reverse=True)
         if all_images:
             latest_image = os.path.basename(all_images[0])
             last_detection_image = all_images[0]
-            last_detection_meta = None  # capturesにはメタデータなし
+            last_detection_meta = None
+
+    # ROI名称を取得
+    roi_name = ""
+    roi_index = config.get('roi_index')
+    if roi_index is not None and roi_index != '':
+        try:
+            idx = int(roi_index)
+            presets = config.get("roi_presets", [])
+            if 0 <= idx < len(presets):
+                roi_name = presets[idx].get('name', f'ROI {idx+1}')
+        except:
+            pass
 
     return jsonify({
         "daily": {k: dict(v) for k, v in daily_minutes.items()},
         "registered_labels": registered_labels,
         "latest_image": latest_image,
         "detection_3h": detection_3h,
-        "recent_grouped": recent_grouped
+        "recent_grouped": recent_grouped,
+        "roi_name": roi_name
     })
 
 @app.route("/api/latest_image")
 def api_latest_image():
-    """直近画像をROI表示切替で返す"""
+    """直近画像をROI/BBox表示切替で返す"""
     show_roi = request.args.get('roi', 'true').lower() == 'true'
+    show_bbox = request.args.get('bbox', 'true').lower() == 'true'
 
     if not last_detection_image or not os.path.exists(last_detection_image):
         return "Not found", 404
@@ -2214,6 +2297,21 @@ def api_latest_image():
         roi = get_roi_by_index(roi_index)
         if roi:
             cv2.rectangle(img, (roi['x'], roi['y']), (roi['x']+roi['w'], roi['y']+roi['h']), (0, 212, 255), 2)
+
+    # BBox描画（メタデータがある場合）
+    if show_bbox and last_detection_meta:
+        faces = last_detection_meta.get('faces', [])
+        for face in faces:
+            bbox = face.get('bbox', {})
+            if bbox:
+                x, y, w, h = bbox.get('x', 0), bbox.get('y', 0), bbox.get('w', 0), bbox.get('h', 0)
+                name = face.get('name', 'Unknown')
+                similarity = face.get('similarity', 0)
+                # 顔枠を描画
+                cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                # ラベル表示
+                label = f"{name} ({similarity:.0f}%)" if similarity else name
+                cv2.putText(img, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     _, jpeg = cv2.imencode('.jpg', img)
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
