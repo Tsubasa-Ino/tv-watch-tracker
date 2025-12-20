@@ -1171,19 +1171,29 @@ HTML_TEMPLATE = """
             const upsample = document.getElementById('detectUpsample').value;
             const roiIndex = document.getElementById('detectRoiSelect').value;
             if (!image) { alert('画像を選択してください'); return; }
-            showStatus('detectStatus', '検出中...', 'info');
+            const msg = model === 'cnn' ? '検出中（CNNは時間がかかります）...' : '検出中...';
+            showStatus('detectStatus', msg, 'info');
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '処理中...';
 
             fetch('/detect_only', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({image, model, upsample: parseInt(upsample), roi_index: roiIndex})
             }).then(r => r.json()).then(data => {
+                btn.disabled = false;
+                btn.textContent = '顔検出実行';
                 if (data.success) {
                     showStatus('detectStatus', `検出完了: ${data.count}人検出 (${data.time}秒)`, 'success');
                     document.getElementById('detectResult').innerHTML = `<img src="/detect_result?${Date.now()}" style="max-width:100%;border-radius:8px;">`;
                 } else {
                     showStatus('detectStatus', 'エラー: ' + data.error, 'error');
                 }
+            }).catch(err => {
+                btn.disabled = false;
+                btn.textContent = '顔検出実行';
+                showStatus('detectStatus', 'エラー: ' + err.message, 'error');
             });
         }
 
@@ -1271,13 +1281,19 @@ HTML_TEMPLATE = """
             const tolerance = document.getElementById('recogTolerance').value;
             const roiIndex = document.getElementById('recogRoiSelect').value;
             if (!image) { alert('画像を選択してください'); return; }
-            showStatus('recogStatus', '認識中...', 'info');
+            const msg = model === 'cnn' ? '認識中（CNNは時間がかかります）...' : '認識中...';
+            showStatus('recogStatus', msg, 'info');
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '処理中...';
 
             fetch('/recognize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({image, model, upsample: parseInt(upsample), tolerance: parseFloat(tolerance), roi_index: roiIndex})
             }).then(r => r.json()).then(data => {
+                btn.disabled = false;
+                btn.textContent = '顔認識実行';
                 if (data.success) {
                     const roiText = data.roi_used ? ' [ROI適用]' : '';
                     showStatus('recogStatus', `認識完了: ${data.faces.length}人検出 (${data.time}秒)${roiText}`, 'success');
@@ -1302,6 +1318,10 @@ HTML_TEMPLATE = """
                 } else {
                     showStatus('recogStatus', 'エラー: ' + data.error, 'error');
                 }
+            }).catch(err => {
+                btn.disabled = false;
+                btn.textContent = '顔認識実行';
+                showStatus('recogStatus', 'エラー: ' + err.message, 'error');
             });
         }
 
@@ -1462,12 +1482,13 @@ HTML_TEMPLATE = """
                 const names = data.labels || [];
                 const hours = Array.from({length: 24}, (_, i) => String(i).padStart(2, '0'));
                 const datasets = names.map(name => ({
-                    label: name, data: hours.map(h => Math.round(data.hourly[h]?.[name] || 0)), backgroundColor: nameColors[name] || '#888'
+                    label: name, data: hours.map(h => Math.round(data.hourly[h]?.[name] || 0)),
+                    borderColor: nameColors[name] || '#888', backgroundColor: 'transparent', tension: 0.3
                 }));
                 if (distributionChart) distributionChart.destroy();
                 distributionChart = new Chart(document.getElementById('distributionChart'), {
-                    type: 'bar', data: { labels: hours.map(h => h + ':00'), datasets },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } }, y: { stacked: true, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
+                    type: 'line', data: { labels: hours.map(h => h + ':00'), datasets },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                 });
             });
         }
