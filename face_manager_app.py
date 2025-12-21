@@ -153,24 +153,6 @@ HTML_TEMPLATE = """
         .btn-danger { background: linear-gradient(135deg, #ff6b6b, #e55555); color: #fff; border-color: #ff5555; }
         .btn-secondary { background: linear-gradient(135deg, #666, #555); color: #fff; border-color: #777; }
         .btn-small { padding: 8px 16px; font-size: 0.85em; }
-        .service-header {
-            background: #16213e;
-            padding: 12px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-            border-bottom: 2px solid #0f3460;
-            flex-wrap: wrap;
-        }
-        .service-header .service-label { color: #888; font-size: 0.9em; }
-        .service-header #serviceStatus {
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-weight: bold;
-            min-width: 100px;
-            text-align: center;
-        }
         .status { padding: 10px; border-radius: 8px; margin: 10px 0; text-align: center; }
         .status.success { background: #4ecdc4; color: #1a1a2e; }
         .status.error { background: #ff6b6b; }
@@ -232,39 +214,43 @@ HTML_TEMPLATE = """
         .roi-preset { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
         .roi-preset-item {
             background: #0f3460; padding: 10px 15px; border-radius: 8px;
-            display: flex; align-items: center; gap: 10px;
+            display: flex; align-items: center; gap: 10px; transition: all 0.2s;
         }
+        .roi-preset-item:hover { background: #16213e; }
+        .roi-preset-item.selected { background: #ffe66d; color: #1a1a2e; }
+        .roi-preset-item.selected small { color: #333 !important; }
         .roi-preset-item .delete-roi { color: #ff6b6b; cursor: pointer; font-size: 1.2em; }
         .label-group { background: #0f3460; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
         .label-group h4 { color: #ffe66d; margin-bottom: 10px; }
     </style>
 </head>
 <body>
-    <div class="service-header">
-        <span class="service-label">顔認識サービス:</span>
-        <span id="serviceStatus" style="background:#666;">確認中...</span>
-        <button class="btn btn-success btn-small" onclick="serviceControl('start')">開始</button>
-        <button class="btn btn-danger btn-small" onclick="serviceControl('stop')">停止</button>
-    </div>
     <div class="tabs">
-        <button class="tab active" onclick="showTab('camera')">カメラ</button>
+        <button class="tab active" onclick="showTab('camera')">撮影</button>
         <button class="tab" onclick="showTab('roi')">ROI設定</button>
         <button class="tab" onclick="showTab('extract')">顔抽出</button>
         <button class="tab" onclick="showTab('register')">顔登録</button>
         <button class="tab" onclick="showTab('test')">テスト</button>
-        <button class="tab" onclick="showTab('settings')">パラメータ設定</button>
+        <button class="tab" onclick="showTab('settings')">顔認識</button>
         <button class="tab" onclick="showTab('dashboard')">ダッシュボード</button>
     </div>
     <div class="content">
         <!-- カメラタブ -->
         <div id="camera" class="tab-content active">
             <div class="card">
-                <h2>リアルタイムプレビュー</h2>
-                <div id="cameraOverlay" style="display:none;background:#0f3460;padding:30px;border-radius:8px;text-align:center;margin-bottom:15px;">
-                    <p style="color:#ffe66d;font-size:1.2em;margin-bottom:15px;">📹 顔認識サービス稼働中</p>
-                    <p style="color:#888;margin-bottom:20px;">カメラを使用するには顔認識サービスを停止する必要があります</p>
-                    <button class="btn btn-primary" onclick="startCamera()">カメラ開始（サービス停止）</button>
+                <h2 id="cameraTitle">プレビュー</h2>
+                <!-- サービス稼働中: 最新検出画像 -->
+                <div id="serviceImageContainer" style="display:none;">
+                    <p style="color:#4ecdc4;margin-bottom:10px;">サービス稼働中 - 最新の検出画像を表示</p>
+                    <div class="preview-container">
+                        <img id="serviceImage" src="" style="width:100%;">
+                    </div>
+                    <p id="serviceImageTime" style="color:#888;font-size:0.9em;margin-top:10px;text-align:center;"></p>
+                    <div style="margin-top:15px; text-align:center;">
+                        <button class="btn btn-success" onclick="captureServiceFrame()">この画像を保存</button>
+                    </div>
                 </div>
+                <!-- サービス停止中: リアルタイムストリーム -->
                 <div id="cameraContainer">
                     <div class="preview-container">
                         <img id="cameraPreview" src="/stream">
@@ -418,7 +404,7 @@ HTML_TEMPLATE = """
                     <button class="btn btn-primary" onclick="runDetection(this)">顔検出実行</button>
                 </div>
                 <div id="detectStatus"></div>
-                <div id="detectResult" style="margin-top:15px;text-align:center;"></div>
+                <div class="detection-result" id="detectResult"></div>
             </div>
 
             <!-- 顔判定テスト -->
@@ -427,11 +413,11 @@ HTML_TEMPLATE = """
                 <p style="color:#888;margin-bottom:15px;">抽出済みの顔画像から誰か判定</p>
                 <div class="params">
                     <div class="form-group">
-                        <label>許容度</label>
+                        <label>類似度閾値</label>
                         <select id="recogOnlyTolerance">
-                            <option value="0.4">0.4（厳密）</option>
-                            <option value="0.5" selected>0.5（標準）</option>
-                            <option value="0.6">0.6（緩め）</option>
+                            <option value="60">60%（厳密）</option>
+                            <option value="50" selected>50%（標準）</option>
+                            <option value="40">40%（緩め）</option>
                         </select>
                     </div>
                 </div>
@@ -466,11 +452,11 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>許容度</label>
+                        <label>類似度閾値</label>
                         <select id="recogTolerance">
-                            <option value="0.4">0.4（厳密）</option>
-                            <option value="0.5" selected>0.5（標準）</option>
-                            <option value="0.6">0.6（緩め）</option>
+                            <option value="60">60%（厳密）</option>
+                            <option value="50" selected>50%（標準）</option>
+                            <option value="40">40%（緩め）</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -491,10 +477,27 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- 顔認識設定タブ -->
+        <!-- 顔認識タブ -->
         <div id="settings" class="tab-content">
             <div class="card">
-                <h2>パラメータ設定</h2>
+                <h2>顔認識サービス</h2>
+                <div style="display:flex;align-items:center;gap:20px;margin-bottom:20px;">
+                    <div>
+                        <button class="btn btn-success" onclick="serviceControl('start')">開始</button>
+                        <button class="btn btn-danger" onclick="serviceControl('stop')" style="margin-left:10px;">停止</button>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="color:#888;">状態:</span>
+                        <span id="cfgServiceStatus" style="padding:5px 15px;border-radius:4px;font-weight:bold;">確認中...</span>
+                    </div>
+                </div>
+                <div style="background:#0f3460;padding:15px;border-radius:8px;margin-bottom:20px;">
+                    <h4 style="margin:0 0 10px 0;color:#4ecdc4;">適用中の設定</h4>
+                    <div id="appliedConfigDisplay" style="font-size:0.9em;color:#ccc;">読込中...</div>
+                </div>
+            </div>
+            <div class="card">
+                <h2>設定変更</h2>
                 <div class="params">
                     <div class="form-group">
                         <label>検出モデル</label>
@@ -512,20 +515,22 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>検出間隔（秒）</label>
+                        <label>撮影間隔</label>
                         <select id="cfgInterval">
                             <option value="3">3秒</option>
                             <option value="5">5秒</option>
                             <option value="10">10秒</option>
                             <option value="30">30秒</option>
+                            <option value="60">1分</option>
+                            <option value="300">5分</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>許容度</label>
+                        <label>類似度閾値</label>
                         <select id="cfgTolerance">
-                            <option value="0.4">0.4（厳密）</option>
-                            <option value="0.5">0.5（標準）</option>
-                            <option value="0.6">0.6（緩め）</option>
+                            <option value="60">60%（厳密）</option>
+                            <option value="50">50%（標準）</option>
+                            <option value="40">40%（緩め）</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -535,8 +540,8 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                 </div>
-                <div style="text-align:right;">
-                    <button class="btn btn-success" onclick="saveConfig()">設定を保存</button>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <button class="btn btn-primary" onclick="saveAndApplyConfig()">設定を保存して反映</button>
                     <span id="configStatus" style="margin-left:10px;"></span>
                 </div>
             </div>
@@ -598,8 +603,13 @@ HTML_TEMPLATE = """
 
     <div class="modal" id="modal">
         <span class="modal-close" onclick="closeModal()">&times;</span>
+        <div id="detectionControls" style="display:none;margin-bottom:10px;">
+            <label style="color:#fff;margin-right:15px;"><input type="checkbox" id="detModalBbox" onchange="updateDetectionImage()" checked> BBox</label>
+            <label style="color:#fff;margin-right:15px;"><input type="checkbox" id="detModalRoi" onchange="updateDetectionImage()" checked> ROI</label>
+            <label style="color:#fff;"><input type="checkbox" id="detModalScore" onchange="updateDetectionImage()" checked> スコア</label>
+        </div>
         <img id="modalImage" src="">
-        <div class="modal-controls">
+        <div class="modal-controls" id="modalControls">
             <button class="btn btn-danger" onclick="deleteModalImage()">削除</button>
         </div>
     </div>
@@ -633,28 +643,52 @@ HTML_TEMPLATE = """
         }
 
         // カメラ状態チェック
+        let serviceImageInterval = null;
         function checkCameraStatus() {
             fetch('/camera_status').then(r => r.json()).then(data => {
-                const overlay = document.getElementById('cameraOverlay');
-                const container = document.getElementById('cameraContainer');
+                const serviceContainer = document.getElementById('serviceImageContainer');
+                const cameraContainer = document.getElementById('cameraContainer');
+                const title = document.getElementById('cameraTitle');
                 if (data.service_running) {
-                    overlay.style.display = 'block';
-                    container.style.display = 'none';
+                    serviceContainer.style.display = 'block';
+                    cameraContainer.style.display = 'none';
+                    title.textContent = 'サービス検出画像';
+                    updateServiceImage();
+                    startServiceImageRefresh();
                 } else {
-                    overlay.style.display = 'none';
-                    container.style.display = 'block';
+                    serviceContainer.style.display = 'none';
+                    cameraContainer.style.display = 'block';
+                    title.textContent = 'リアルタイムプレビュー';
+                    stopServiceImageRefresh();
                 }
             });
         }
 
-        function startCamera() {
-            fetch('/start_camera', { method: 'POST' }).then(r => r.json()).then(data => {
-                if (data.success) {
-                    document.getElementById('cameraOverlay').style.display = 'none';
-                    document.getElementById('cameraContainer').style.display = 'block';
-                    document.getElementById('cameraPreview').src = '/stream?' + Date.now();
+        function updateServiceImage() {
+            // サービスの最新フレームを取得
+            const img = document.getElementById('serviceImage');
+            const newSrc = `/api/service_frame?t=${Date.now()}`;
+            // 画像が読み込めるか確認
+            fetch(newSrc).then(r => {
+                if (r.ok) {
+                    img.src = newSrc;
+                    document.getElementById('serviceImageTime').textContent =
+                        `更新: ${new Date().toLocaleTimeString('ja-JP')}`;
                 }
             });
+        }
+
+        function startServiceImageRefresh() {
+            if (!serviceImageInterval) {
+                serviceImageInterval = setInterval(updateServiceImage, 5000);
+            }
+        }
+
+        function stopServiceImageRefresh() {
+            if (serviceImageInterval) {
+                clearInterval(serviceImageInterval);
+                serviceImageInterval = null;
+            }
         }
 
         function showStatus(elementId, message, type) {
@@ -669,6 +703,17 @@ HTML_TEMPLATE = """
             fetch('/capture', {method: 'POST'}).then(r => r.json()).then(data => {
                 if (data.success) {
                     showStatus('captureStatus', '撮影完了: ' + data.filename, 'success');
+                    loadCaptures();
+                } else {
+                    showStatus('captureStatus', 'エラー: ' + data.error, 'error');
+                }
+            });
+        }
+
+        function captureServiceFrame() {
+            fetch('/capture_service_frame', {method: 'POST'}).then(r => r.json()).then(data => {
+                if (data.success) {
+                    showStatus('captureStatus', '保存完了: ' + data.filename, 'success');
                     loadCaptures();
                 } else {
                     showStatus('captureStatus', 'エラー: ' + data.error, 'error');
@@ -763,6 +808,7 @@ HTML_TEMPLATE = """
             });
         }
 
+        let selectedPresetIndex = -1;
         function renderRoiPresets() {
             const container = document.getElementById('roiPresetList');
             if (roiPresets.length === 0) {
@@ -770,12 +816,18 @@ HTML_TEMPLATE = """
                 return;
             }
             container.innerHTML = roiPresets.map((p, i) => `
-                <div class="roi-preset-item">
+                <div class="roi-preset-item ${selectedPresetIndex === i ? 'selected' : ''}" onclick="selectRoiPreset(${i})" style="cursor:pointer;">
                     <span>${p.name || 'ROI ' + (i+1)}</span>
                     <small style="color:#888;">(${p.x},${p.y} ${p.w}x${p.h})</small>
-                    <span class="delete-roi" onclick="deleteRoiPreset(${i})">&times;</span>
+                    <span class="delete-roi" onclick="event.stopPropagation();deleteRoiPreset(${i})">&times;</span>
                 </div>
             `).join('');
+        }
+
+        function selectRoiPreset(index) {
+            selectedPresetIndex = (selectedPresetIndex === index) ? -1 : index;
+            renderRoiPresets();
+            drawRoi();
         }
 
         function deleteRoiPreset(index) {
@@ -819,11 +871,29 @@ HTML_TEMPLATE = """
         function drawRoi() {
             const canvas = document.getElementById('roiCanvas');
             const ctx = canvas.getContext('2d');
+            const img = document.getElementById('roiImage');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (img.naturalWidth === 0) return;
+            const scaleX = canvas.width / img.naturalWidth;
+            const scaleY = canvas.height / img.naturalHeight;
+
+            // 選択された保存済みROIを描画
+            if (selectedPresetIndex >= 0 && roiPresets[selectedPresetIndex]) {
+                const p = roiPresets[selectedPresetIndex];
+                const x = p.x * scaleX, y = p.y * scaleY;
+                const w = p.w * scaleX, h = p.h * scaleY;
+                ctx.strokeStyle = '#ffe66d';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([]);
+                ctx.strokeRect(x, y, w, h);
+                ctx.fillStyle = '#ffe66d';
+                ctx.font = 'bold 16px sans-serif';
+                ctx.fillText(p.name || 'ROI ' + (selectedPresetIndex+1), x + 5, y - 8);
+            }
+
+            // 現在描画中のROI
             if (currentRoi) {
-                const img = document.getElementById('roiImage');
-                const scaleX = canvas.width / img.naturalWidth;
-                const scaleY = canvas.height / img.naturalHeight;
                 ctx.strokeStyle = '#00d4ff';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([5, 5]);
@@ -889,6 +959,7 @@ HTML_TEMPLATE = """
                 drawRoi();
             });
             canvas.addEventListener('touchend', () => { roiDrawing = false; });
+            loadServiceStatus();
             checkCameraStatus();
             loadCaptures();
         });
@@ -926,24 +997,48 @@ HTML_TEMPLATE = """
 
         function extractFaces() {
             if (selectedExtractImages.size === 0) { alert('画像を選択してください'); return; }
-            showStatus('extractStatus', '検出中...', 'info');
             const model = document.getElementById('extractModel').value;
             const upsample = parseInt(document.getElementById('extractUpsample').value);
             const roiIndex = document.getElementById('extractRoiSelect').value;
             const images = Array.from(selectedExtractImages);
+            const msg = model === 'cnn' ? '検出中（CNNは時間がかかります）...' : '検出中...';
+            showStatus('extractStatus', msg, 'info');
+
             let completed = 0;
             let totalFaces = 0;
+            let hasError = false;
 
             images.forEach(image => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300000);
+
                 fetch('/extract_and_save_faces', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({image, model, upsample, roi_index: roiIndex})
+                    body: JSON.stringify({image, model, upsample, roi_index: roiIndex}),
+                    signal: controller.signal
                 }).then(r => r.json()).then(data => {
+                    clearTimeout(timeoutId);
                     if (data.success) totalFaces += data.count;
+                    else hasError = true;
+                    completed++;
+                    showStatus('extractStatus', `処理中... (${completed}/${images.length})`, 'info');
+                    if (completed === images.length) {
+                        if (hasError) {
+                            showStatus('extractStatus', `完了（一部エラー）: ${totalFaces}個の顔を抽出`, 'error');
+                        } else {
+                            showStatus('extractStatus', `${totalFaces}個の顔を抽出しました`, 'success');
+                        }
+                        loadExtractedFaces();
+                        selectedExtractImages.clear();
+                        loadExtractImages();
+                    }
+                }).catch(err => {
+                    clearTimeout(timeoutId);
+                    hasError = true;
                     completed++;
                     if (completed === images.length) {
-                        showStatus('extractStatus', `${totalFaces}個の顔を抽出しました`, 'success');
+                        showStatus('extractStatus', `エラー: ${err.message}`, 'error');
                         loadExtractedFaces();
                     }
                 });
@@ -971,6 +1066,8 @@ HTML_TEMPLATE = """
             modalImagePath = filename;
             modalImageType = 'face';
             document.getElementById('modalImage').src = '/face_image/' + filename;
+            document.getElementById('modalControls').style.display = 'block';
+            document.getElementById('detectionControls').style.display = 'none';
             document.getElementById('modal').classList.add('active');
         }
 
@@ -1030,6 +1127,7 @@ HTML_TEMPLATE = """
                     showStatus('registerStatus', `${data.count}件登録・エンコード完了`, 'success');
                     loadUnregisteredFaces();
                     loadRegisteredFaces();
+                    loadLabelStatus();
                 } else {
                     showStatus('registerStatus', 'エラー: ' + data.error, 'error');
                 }
@@ -1079,6 +1177,8 @@ HTML_TEMPLATE = """
         }
 
         // ラベル管理
+        let editingLabel = null;
+
         function loadLabelStatus() {
             fetch('/api/label_status').then(r => r.json()).then(data => {
                 const container = document.getElementById('labelStatus');
@@ -1086,25 +1186,87 @@ HTML_TEMPLATE = """
                     container.innerHTML = '<p style="color:#888;">登録済みラベルなし</p>';
                     return;
                 }
-                let html = '<div style="display:flex;flex-wrap:wrap;gap:10px;">';
+                let html = '<div style="display:flex;flex-direction:column;gap:8px;">';
                 data.labels.forEach(label => {
                     const color = nameColors[label.name] || '#888';
                     const hasImages = label.count > 0;
-                    html += `<div style="background:#0f3460;padding:10px 15px;border-radius:8px;border-left:3px solid ${color};display:flex;align-items:center;gap:10px;">
-                        <div>
-                            <div style="color:${color};font-weight:bold;">${label.name}</div>
-                            <div style="color:#888;font-size:0.8em;">${label.count}枚</div>
-                        </div>
-                        ${!hasImages ? `<button class="btn btn-danger btn-small" onclick="deleteLabel('${label.name}')" style="padding:5px 10px;font-size:0.8em;">削除</button>` : ''}
-                    </div>`;
+                    const isEditing = editingLabel === label.name;
+
+                    if (isEditing) {
+                        html += `<div style="background:#0f3460;padding:10px 15px;border-radius:8px;border-left:3px solid ${color};display:flex;align-items:center;justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:10px;flex:1;">
+                                <input type="text" id="editLabelInput" value="${label.name}" style="background:#1a1a2e;border:1px solid #4ecdc4;color:#fff;padding:5px 10px;border-radius:4px;width:120px;">
+                                <span style="color:#888;font-size:0.9em;">${label.count}枚</span>
+                            </div>
+                            <div style="display:flex;gap:5px;">
+                                <button class="btn btn-primary btn-small" onclick="saveLabel('${label.name}')" style="padding:5px 10px;font-size:0.8em;">保存</button>
+                                <button class="btn btn-secondary btn-small" onclick="cancelEditLabel()" style="padding:5px 10px;font-size:0.8em;">取消</button>
+                            </div>
+                        </div>`;
+                    } else {
+                        html += `<div style="background:#0f3460;padding:10px 15px;border-radius:8px;border-left:3px solid ${color};display:flex;align-items:center;justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:15px;">
+                                <span style="color:${color};font-weight:bold;min-width:80px;">${label.name}</span>
+                                <span style="color:#888;font-size:0.9em;">${label.count}枚</span>
+                            </div>
+                            <div style="display:flex;gap:5px;">
+                                <button class="btn btn-secondary btn-small" onclick="editLabel('${label.name}')" style="padding:5px 10px;font-size:0.8em;">編集</button>
+                                <button class="btn btn-danger btn-small" onclick="deleteLabel('${label.name}')" style="padding:5px 10px;font-size:0.8em;">削除</button>
+                            </div>
+                        </div>`;
+                    }
                 });
                 html += '</div>';
                 container.innerHTML = html;
+
+                if (editingLabel) {
+                    const input = document.getElementById('editLabelInput');
+                    if (input) {
+                        input.focus();
+                        input.select();
+                    }
+                }
+            });
+        }
+
+        function editLabel(name) {
+            editingLabel = name;
+            loadLabelStatus();
+        }
+
+        function cancelEditLabel() {
+            editingLabel = null;
+            loadLabelStatus();
+        }
+
+        function saveLabel(oldName) {
+            const input = document.getElementById('editLabelInput');
+            const newName = input ? input.value.trim().toLowerCase() : '';
+
+            if (!newName) {
+                alert('ラベル名を入力してください');
+                return;
+            }
+
+            fetch('/api/rename_label', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({old_name: oldName, new_name: newName})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    editingLabel = null;
+                    loadLabelStatus();
+                    loadRegisteredFaces();
+                } else {
+                    alert('エラー: ' + (data.error || '変更に失敗しました'));
+                }
+            }).catch(err => {
+                alert('エラー: ' + err.message);
             });
         }
 
         function deleteLabel(name) {
-            if (!confirm(`ラベル "${name}" を削除しますか？\\nエンコードデータも削除されます。`)) return;
+            if (!confirm(`ラベル "${name}" を削除しますか？\\n・登録済み顔画像のラベルが解除されます\\n・エンコードデータも削除されます`)) return;
             fetch('/api/delete_label', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1113,6 +1275,7 @@ HTML_TEMPLATE = """
                 if (data.success) {
                     loadLabelStatus();
                     loadRegisteredFaces();
+                    loadExtractedFaces();
                 } else {
                     alert('エラー: ' + (data.error || '削除に失敗しました'));
                 }
@@ -1165,35 +1328,96 @@ HTML_TEMPLATE = """
             document.getElementById('detectImage').value = filename;
         }
 
+        let detectInProgress = false;
+        let lastDetectHasRoi = false;
+
         function runDetection(btn) {
+            if (detectInProgress) { alert('処理中です。しばらくお待ちください。'); return; }
             const image = document.getElementById('detectImage').value;
             const model = document.getElementById('detectModel').value;
             const upsample = document.getElementById('detectUpsample').value;
             const roiIndex = document.getElementById('detectRoiSelect').value;
             if (!image) { alert('画像を選択してください'); return; }
-            const msg = model === 'cnn' ? '検出中（CNNは時間がかかります）...' : '検出中...';
+            const msg = model === 'cnn' ? '検出中（CNNは2-3分かかる場合があります）...' : '検出中...';
             showStatus('detectStatus', msg, 'info');
-            btn.disabled = true;
-            btn.textContent = '処理中...';
+            if (btn) { btn.disabled = true; btn.textContent = '処理中...'; }
+            detectInProgress = true;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000);
 
             fetch('/detect_only', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({image, model, upsample: parseInt(upsample), roi_index: roiIndex})
+                body: JSON.stringify({image, model, upsample: parseInt(upsample), roi_index: roiIndex}),
+                signal: controller.signal
             }).then(r => r.json()).then(data => {
-                btn.disabled = false;
-                btn.textContent = '顔検出実行';
+                clearTimeout(timeoutId);
+                detectInProgress = false;
+                if (btn) { btn.disabled = false; btn.textContent = '顔検出実行'; }
                 if (data.success) {
-                    showStatus('detectStatus', `検出完了: ${data.count}人検出 (${data.time}秒)`, 'success');
-                    document.getElementById('detectResult').innerHTML = `<img src="/detect_result?${Date.now()}" style="max-width:100%;border-radius:8px;">`;
+                    lastDetectHasRoi = data.roi_used;
+                    const roiText = data.roi_used ? ' [ROI適用]' : '';
+                    showStatus('detectStatus', `検出完了: ${data.count}人検出 (${data.time}秒)${roiText}`, 'success');
+                    renderDetectResult(data);
                 } else {
                     showStatus('detectStatus', 'エラー: ' + data.error, 'error');
                 }
             }).catch(err => {
-                btn.disabled = false;
-                btn.textContent = '顔検出実行';
-                showStatus('detectStatus', 'エラー: ' + err.message, 'error');
+                clearTimeout(timeoutId);
+                detectInProgress = false;
+                if (btn) { btn.disabled = false; btn.textContent = '顔検出実行'; }
+                if (err.name === 'AbortError') {
+                    showStatus('detectStatus', 'タイムアウト: 処理に時間がかかりすぎました', 'error');
+                } else {
+                    showStatus('detectStatus', 'エラー: ' + err.message, 'error');
+                }
             });
+        }
+
+        let lastDetectData = null;
+        function renderDetectResult(data) {
+            lastDetectData = data;
+            const result = document.getElementById('detectResult');
+            const showBbox = document.getElementById('detectShowBbox')?.checked ?? true;
+            const showRoi = document.getElementById('detectShowRoi')?.checked ?? true;
+            const ts = Date.now();
+
+            let html = `
+                <div style="display:flex;gap:20px;margin-bottom:10px;justify-content:center;">
+                    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+                        <input type="checkbox" id="detectShowBbox" onchange="updateDetectImage()" ${showBbox ? 'checked' : ''}> BBox表示
+                    </label>
+                    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;${lastDetectHasRoi ? '' : 'opacity:0.5;'}">
+                        <input type="checkbox" id="detectShowRoi" onchange="updateDetectImage()" ${showRoi ? 'checked' : ''} ${lastDetectHasRoi ? '' : 'disabled'}> ROI表示
+                    </label>
+                </div>
+                <img id="detectResultImg" src="/detect_result_render?show_bbox=${showBbox}&show_roi=${showRoi}&t=${ts}" style="width:100%;border-radius:8px;">
+            `;
+
+            if (data.count === 0) {
+                html += '<p style="color:#ff6b6b;margin-top:10px;">顔が検出されませんでした</p>';
+            } else {
+                html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
+                    ${data.faces.map((f, i) => `
+                        <div class="face-box">
+                            <img src="/detect_face/${i}?${ts}">
+                            <div style="font-size:0.9em;color:#4ecdc4;">顔 ${i + 1}</div>
+                            <div style="font-size:0.8em;color:#888;">${f.width}x${f.height}</div>
+                        </div>
+                    `).join('')}
+                </div>`;
+            }
+            result.innerHTML = html;
+        }
+
+        function updateDetectImage() {
+            const showBbox = document.getElementById('detectShowBbox')?.checked ?? true;
+            const showRoi = document.getElementById('detectShowRoi')?.checked ?? true;
+            const img = document.getElementById('detectResultImg');
+            if (img) {
+                img.src = `/detect_result_render?show_bbox=${showBbox}&show_roi=${showRoi}&t=${Date.now()}`;
+            }
         }
 
         // 顔認識テスト（顔画像入力）
@@ -1221,25 +1445,49 @@ HTML_TEMPLATE = """
 
         function runRecogOnly() {
             const faceFile = document.getElementById('recogFaceFile').value;
-            const tolerance = document.getElementById('recogOnlyTolerance').value;
+            const similarityThreshold = document.getElementById('recogOnlyTolerance').value;
+            const tolerance = 1 - parseFloat(similarityThreshold) / 100;
             if (!faceFile) { alert('顔画像を選択してください'); return; }
             showStatus('recogOnlyStatus', '認識中...', 'info');
 
             fetch('/recognize_face', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({face_file: faceFile, tolerance: parseFloat(tolerance)})
+                body: JSON.stringify({face_file: faceFile, tolerance: tolerance})
             }).then(r => r.json()).then(data => {
                 if (data.success) {
                     const color = nameColors[data.name] || '#888';
                     const similarity = Math.max(0, (1 - data.distance) * 100).toFixed(1);
                     showStatus('recogOnlyStatus', '認識完了', 'success');
+
+                    // 全ラベルの類似度をソート（類似度高い順）
+                    const allDist = data.all_distances || {};
+                    const sortedLabels = Object.entries(allDist)
+                        .map(([label, dist]) => ({label, dist, similarity: Math.max(0, (1 - dist) * 100)}))
+                        .sort((a, b) => b.similarity - a.similarity);
+
+                    let labelsHtml = sortedLabels.map(item => {
+                        const labelColor = nameColors[item.label] || '#888';
+                        const isMatch = item.label === data.name && data.name !== 'unknown';
+                        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${isMatch ? '#1a4a3a' : '#1a1a2e'};border-radius:4px;border-left:3px solid ${labelColor};">
+                            <span style="color:${labelColor};font-weight:${isMatch ? 'bold' : 'normal'};">${item.label}</span>
+                            <span style="color:${item.similarity >= 50 ? '#4ecdc4' : '#888'};">${item.similarity.toFixed(1)}%</span>
+                        </div>`;
+                    }).join('');
+
                     document.getElementById('recogOnlyResult').innerHTML = `
-                        <div style="display:flex;align-items:center;gap:20px;background:#0f3460;padding:20px;border-radius:8px;">
-                            <img src="/face_image/${faceFile}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">
-                            <div>
-                                <div style="font-size:1.5em;font-weight:bold;color:${color};margin-bottom:5px;">${data.name}</div>
-                                <div style="color:#888;">類似度: ${similarity}%</div>
+                        <div style="display:flex;gap:20px;background:#0f3460;padding:20px;border-radius:8px;">
+                            <div style="flex-shrink:0;">
+                                <img src="/face_image/${faceFile}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;">
+                            </div>
+                            <div style="flex:1;">
+                                <div style="font-size:1.3em;font-weight:bold;color:${color};margin-bottom:10px;">
+                                    判定結果: ${data.name} (${similarity}%)
+                                </div>
+                                <div style="font-size:0.9em;color:#888;margin-bottom:8px;">各ラベルとの類似度:</div>
+                                <div style="display:flex;flex-direction:column;gap:6px;">
+                                    ${labelsHtml}
+                                </div>
                             </div>
                         </div>
                     `;
@@ -1273,54 +1521,99 @@ HTML_TEMPLATE = """
             document.getElementById('recogImage').value = filename;
         }
 
+        let recogInProgress = false;
+        let lastRecogHasRoi = false;
+        let lastRecogData = null;
+
         function runRecognition(btn) {
+            if (recogInProgress) { alert('処理中です。しばらくお待ちください。'); return; }
             const image = document.getElementById('recogImage').value;
             const model = document.getElementById('recogModel').value;
             const upsample = document.getElementById('recogUpsample').value;
-            const tolerance = document.getElementById('recogTolerance').value;
+            const similarityThreshold = document.getElementById('recogTolerance').value;
+            const tolerance = 1 - parseFloat(similarityThreshold) / 100;
             const roiIndex = document.getElementById('recogRoiSelect').value;
             if (!image) { alert('画像を選択してください'); return; }
-            const msg = model === 'cnn' ? '認識中（CNNは時間がかかります）...' : '認識中...';
+            const msg = model === 'cnn' ? '認識中（CNNは2-3分かかる場合があります）...' : '認識中...';
             showStatus('recogStatus', msg, 'info');
-            btn.disabled = true;
-            btn.textContent = '処理中...';
+            if (btn) { btn.disabled = true; btn.textContent = '処理中...'; }
+            recogInProgress = true;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000);
 
             fetch('/recognize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({image, model, upsample: parseInt(upsample), tolerance: parseFloat(tolerance), roi_index: roiIndex})
+                body: JSON.stringify({image, model, upsample: parseInt(upsample), tolerance: tolerance, roi_index: roiIndex}),
+                signal: controller.signal
             }).then(r => r.json()).then(data => {
-                btn.disabled = false;
-                btn.textContent = '顔認識実行';
+                clearTimeout(timeoutId);
+                recogInProgress = false;
+                if (btn) { btn.disabled = false; btn.textContent = '顔認識実行'; }
                 if (data.success) {
+                    lastRecogHasRoi = data.roi_used;
                     const roiText = data.roi_used ? ' [ROI適用]' : '';
                     showStatus('recogStatus', `認識完了: ${data.faces.length}人検出 (${data.time}秒)${roiText}`, 'success');
-                    const result = document.getElementById('recogResult');
-                    if (data.faces.length === 0) {
-                        result.innerHTML = '<p style="color:#ff6b6b;">顔が検出されませんでした</p>';
-                    } else {
-                        const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888'};
-                        result.innerHTML = `
-                            <img src="/recog_result?${Date.now()}" style="width:100%;border-radius:8px;">
-                            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
-                                ${data.faces.map((f, i) => `
-                                    <div class="face-box" style="border-left:4px solid ${nameColors[f.name] || '#888'};">
-                                        <img src="/recog_face/${i}?${Date.now()}">
-                                        <div style="color:${nameColors[f.name] || '#888'};font-weight:bold;">${f.name}</div>
-                                        <div style="font-size:0.8em;color:#888;">類似度: ${Math.max(0, (1 - f.distance) * 100).toFixed(1)}%</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        `;
-                    }
+                    renderRecogResult(data);
                 } else {
                     showStatus('recogStatus', 'エラー: ' + data.error, 'error');
                 }
             }).catch(err => {
-                btn.disabled = false;
-                btn.textContent = '顔認識実行';
-                showStatus('recogStatus', 'エラー: ' + err.message, 'error');
+                clearTimeout(timeoutId);
+                recogInProgress = false;
+                if (btn) { btn.disabled = false; btn.textContent = '顔認識実行'; }
+                if (err.name === 'AbortError') {
+                    showStatus('recogStatus', 'タイムアウト: 処理に時間がかかりすぎました', 'error');
+                } else {
+                    showStatus('recogStatus', 'エラー: ' + err.message, 'error');
+                }
             });
+        }
+
+        function renderRecogResult(data) {
+            lastRecogData = data;
+            const result = document.getElementById('recogResult');
+            const showBbox = document.getElementById('recogShowBbox')?.checked ?? true;
+            const showRoi = document.getElementById('recogShowRoi')?.checked ?? true;
+            const ts = Date.now();
+            const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888'};
+
+            let html = `
+                <div style="display:flex;gap:20px;margin-bottom:10px;justify-content:center;">
+                    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+                        <input type="checkbox" id="recogShowBbox" onchange="updateRecogImage()" ${showBbox ? 'checked' : ''}> BBox表示
+                    </label>
+                    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;${lastRecogHasRoi ? '' : 'opacity:0.5;'}">
+                        <input type="checkbox" id="recogShowRoi" onchange="updateRecogImage()" ${showRoi ? 'checked' : ''} ${lastRecogHasRoi ? '' : 'disabled'}> ROI表示
+                    </label>
+                </div>
+                <img id="recogResultImg" src="/recog_result_render?show_bbox=${showBbox}&show_roi=${showRoi}&t=${ts}" style="width:100%;border-radius:8px;">
+            `;
+
+            if (data.faces.length === 0) {
+                html += '<p style="color:#ff6b6b;margin-top:10px;">顔が検出されませんでした</p>';
+            } else {
+                html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
+                    ${data.faces.map((f, i) => `
+                        <div class="face-box" style="border-left:4px solid ${nameColors[f.name] || '#888'};">
+                            <img src="/recog_face/${i}?${ts}">
+                            <div style="color:${nameColors[f.name] || '#888'};font-weight:bold;">${f.name}</div>
+                            <div style="font-size:0.8em;color:#888;">類似度: ${Math.max(0, (1 - f.distance) * 100).toFixed(1)}%</div>
+                        </div>
+                    `).join('')}
+                </div>`;
+            }
+            result.innerHTML = html;
+        }
+
+        function updateRecogImage() {
+            const showBbox = document.getElementById('recogShowBbox')?.checked ?? true;
+            const showRoi = document.getElementById('recogShowRoi')?.checked ?? true;
+            const img = document.getElementById('recogResultImg');
+            if (img) {
+                img.src = `/recog_result_render?show_bbox=${showBbox}&show_roi=${showRoi}&t=${Date.now()}`;
+            }
         }
 
         // モーダル
@@ -1328,10 +1621,49 @@ HTML_TEMPLATE = """
             modalImagePath = path;
             modalImageType = 'capture';
             document.getElementById('modalImage').src = src;
+            document.getElementById('modalControls').style.display = 'block';
+            document.getElementById('detectionControls').style.display = 'none';
             document.getElementById('modal').classList.add('active');
         }
 
         function closeModal() { document.getElementById('modal').classList.remove('active'); }
+
+        let currentDetectionTimestamp = '';
+
+        function showDetectionModal(images, timestamp) {
+            if (!images || images.length === 0) {
+                alert('この検出の画像がありません');
+                return;
+            }
+            // タイムスタンプを抽出 (detection_YYYYMMDD_HHMMSS_name.jpg -> YYYYMMDD_HHMMSS)
+            const firstImage = images[0];
+            const match = firstImage.match(/detection_(\d{8}_\d{6})_/);
+            if (match) {
+                currentDetectionTimestamp = match[1];
+                // チェックボックスをリセット
+                document.getElementById('detModalBbox').checked = true;
+                document.getElementById('detModalRoi').checked = true;
+                document.getElementById('detModalScore').checked = true;
+                updateDetectionImage();
+                document.getElementById('detectionControls').style.display = 'block';
+            } else {
+                // 旧形式の場合はそのまま表示
+                document.getElementById('modalImage').src = '/detection_image/' + firstImage + '?t=' + Date.now();
+                document.getElementById('detectionControls').style.display = 'none';
+            }
+            modalImagePath = firstImage;
+            modalImageType = 'detection';
+            document.getElementById('modalControls').style.display = 'none';
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function updateDetectionImage() {
+            if (!currentDetectionTimestamp) return;
+            const bbox = document.getElementById('detModalBbox').checked;
+            const roi = document.getElementById('detModalRoi').checked;
+            const score = document.getElementById('detModalScore').checked;
+            document.getElementById('modalImage').src = `/detection_render/${currentDetectionTimestamp}?bbox=${bbox}&roi=${roi}&score=${score}&t=${Date.now()}`;
+        }
 
         function deleteModalImage() {
             if (!confirm('削除しますか？')) return;
@@ -1356,20 +1688,33 @@ HTML_TEMPLATE = """
         }
 
         // ダッシュボード
-        let dashboardRefreshInterval = null;
+        let dashboardFastInterval = null;
+        let dashboardMinuteInterval = null;
+        let dashboardHourInterval = null;
         const nameColors = {'mio': '#ff6b6b', 'yu': '#4ecdc4', 'tsubasa': '#ffe66d', 'unknown': '#888'};
         let distributionChart = null, trendChart = null;
         let latestImageFilename = '';
 
         function startDashboardRefresh() {
-            if (dashboardRefreshInterval) clearInterval(dashboardRefreshInterval);
-            dashboardRefreshInterval = setInterval(() => {
-                if (currentTab === 'dashboard') { loadDashboard(); loadServiceStatus(); }
+            stopDashboardRefresh();
+            // 直近の画像と検出ログ: 10秒周期
+            dashboardFastInterval = setInterval(() => {
+                if (currentTab === 'dashboard') { loadDashboardFast(); }
             }, 10000);
+            // 視聴時間・検出状況・視聴時間分布: 1分周期
+            dashboardMinuteInterval = setInterval(() => {
+                if (currentTab === 'dashboard') { loadDashboardMinute(); loadDistribution(); }
+            }, 60000);
+            // 視聴時間推移: 1時間周期
+            dashboardHourInterval = setInterval(() => {
+                if (currentTab === 'dashboard') { loadTrend(); }
+            }, 3600000);
         }
 
         function stopDashboardRefresh() {
-            if (dashboardRefreshInterval) { clearInterval(dashboardRefreshInterval); dashboardRefreshInterval = null; }
+            if (dashboardFastInterval) { clearInterval(dashboardFastInterval); dashboardFastInterval = null; }
+            if (dashboardMinuteInterval) { clearInterval(dashboardMinuteInterval); dashboardMinuteInterval = null; }
+            if (dashboardHourInterval) { clearInterval(dashboardHourInterval); dashboardHourInterval = null; }
         }
 
         function initDashboardDates() {
@@ -1387,11 +1732,9 @@ HTML_TEMPLATE = """
             document.getElementById('latestImage').src = `/api/latest_image?roi=${showRoi}&bbox=${showBbox}&t=${Date.now()}`;
         }
 
-        function loadDashboard() {
+        // 直近の画像と検出ログ（10秒周期）
+        function loadDashboardFast() {
             fetch('/api/dashboard').then(r => r.json()).then(data => {
-                const today = new Date().toISOString().slice(0, 10);
-                const names = data.registered_labels || [];
-
                 // ROI名称表示
                 const roiName = data.roi_name || '';
                 document.getElementById('roiNameDisplay').textContent = roiName ? `ROI: ${roiName}` : '';
@@ -1406,6 +1749,22 @@ HTML_TEMPLATE = """
                     document.getElementById('latestImage').style.display = 'none';
                     document.getElementById('noLatestImage').style.display = 'block';
                 }
+
+                // 検出ログ（同時検出は1レコードにまとめ）
+                const recentHtml = (data.recent_grouped || []).slice(0, 30).map(e => {
+                    const namesHtml = e.names.map(n => `<span style="color:${nameColors[n] || '#888'};margin-left:8px;">${n}</span>`).join('');
+                    const images = JSON.stringify(e.images || []);
+                    return `<div style="padding:6px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick='showDetectionModal(${images}, "${e.timestamp}")'><span style="color:#888;">${e.timestamp}</span><div>${namesHtml}</div></div>`;
+                }).join('');
+                document.getElementById('recentActivity').innerHTML = recentHtml || '<p style="color:#888;padding:10px;">データなし</p>';
+            });
+        }
+
+        // 視聴時間と検出状況（1分周期）
+        function loadDashboardMinute() {
+            fetch('/api/dashboard').then(r => r.json()).then(data => {
+                const today = new Date().toISOString().slice(0, 10);
+                const names = data.registered_labels || [];
 
                 // 視聴時間（本日・今週）
                 let todayHtml = '';
@@ -1434,7 +1793,6 @@ HTML_TEMPLATE = """
                 // 検出状況（直近3時間）- データがなくても構造を表示
                 let html3h = '';
                 if (names.length === 0) {
-                    // 登録者がいない場合も空のバーコードエリアを表示
                     const emptyBars = Array(180).fill(0).map(() => '<div style="width:2px;height:24px;background:#333;"></div>').join('');
                     html3h = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;background:#0f3460;border-radius:6px;">
                         <div style="color:#888;font-weight:bold;width:60px;">-</div>
@@ -1460,15 +1818,13 @@ HTML_TEMPLATE = """
                     });
                 }
                 document.getElementById('detection3h').innerHTML = html3h;
-
-                // 検出ログ（同時検出は1レコードにまとめ）
-                const recentHtml = (data.recent_grouped || []).slice(0, 30).map(e => {
-                    const namesHtml = e.names.map(n => `<span style="color:${nameColors[n] || '#888'};margin-left:8px;">${n}</span>`).join('');
-                    return `<div style="padding:6px 10px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;"><span style="color:#888;">${e.timestamp}</span><div>${namesHtml}</div></div>`;
-                }).join('');
-                document.getElementById('recentActivity').innerHTML = recentHtml || '<p style="color:#888;padding:10px;">データなし</p>';
             });
+        }
 
+        // 初回読み込み用（全て読み込む）
+        function loadDashboard() {
+            loadDashboardFast();
+            loadDashboardMinute();
             loadDistribution();
             loadTrend();
         }
@@ -1486,7 +1842,7 @@ HTML_TEMPLATE = """
                 if (distributionChart) distributionChart.destroy();
                 distributionChart = new Chart(document.getElementById('distributionChart'), {
                     type: 'line', data: { labels: hours.map(h => h + ':00'), datasets },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { min: 0, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                 });
             });
         }
@@ -1505,7 +1861,7 @@ HTML_TEMPLATE = """
                 if (trendChart) trendChart.destroy();
                 trendChart = new Chart(document.getElementById('trendChart'), {
                     type: 'line', data: { labels: dates.map(d => d.slice(5)), datasets },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#888' }, grid: { color: '#333' } }, y: { min: 0, ticks: { color: '#888' }, grid: { color: '#333' } } }, plugins: { legend: { labels: { color: '#eee' } } } }
                 });
             });
         }
@@ -1513,62 +1869,155 @@ HTML_TEMPLATE = """
         function loadServiceStatus() {
             fetch('/api/service_status').then(r => r.json()).then(data => {
                 const el = document.getElementById('serviceStatus');
-                if (data.running) { el.textContent = '稼働中'; el.style.background = '#4ecdc4'; el.style.color = '#000'; }
-                else { el.textContent = '停止中'; el.style.background = '#ff6b6b'; el.style.color = '#fff'; }
+                if (el) {
+                    if (data.running) { el.textContent = '稼働中'; el.style.background = '#4ecdc4'; el.style.color = '#000'; }
+                    else { el.textContent = '停止中'; el.style.background = '#ff6b6b'; el.style.color = '#fff'; }
+                }
+                updateCfgServiceStatus(data.running);
             });
         }
 
         function serviceControl(action) {
             fetch('/api/service_control', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action}) })
             .then(r => r.json()).then(data => {
-                setTimeout(loadServiceStatus, 1000);
+                setTimeout(() => {
+                    loadServiceStatus();
+                    loadConfig();
+                }, 2000);
                 if (data.error) {
                     alert(data.error);
                 } else if (action === 'stop') {
                     // サービス停止後、カメラタブにいる場合はプレビューを再開
                     setTimeout(() => {
                         if (currentTab === 'camera') {
-                            checkCameraStatus();
                             // カメラプレビューを再開
                             fetch('/start_camera', { method: 'POST' }).then(r => r.json()).then(d => {
                                 if (d.success) {
-                                    document.getElementById('cameraOverlay').style.display = 'none';
-                                    document.getElementById('cameraContainer').style.display = 'block';
+                                    checkCameraStatus();
                                     document.getElementById('cameraPreview').src = '/stream?' + Date.now();
                                 }
                             });
+                        }
+                    }, 500);
+                } else if (action === 'start') {
+                    // サービス開始後、カメラタブにいる場合は検出画像表示に切り替え
+                    setTimeout(() => {
+                        if (currentTab === 'camera') {
+                            checkCameraStatus();
                         }
                     }, 500);
                 }
             });
         }
 
+        function formatConfigDisplay(cfg) {
+            const interval = cfg.interval_sec || 5;
+            const intervalText = interval >= 60 ? `${interval / 60}分` : `${interval}秒`;
+            const tolerance = cfg.tolerance || 0.5;
+            const similarity = Math.round((1 - tolerance) * 100);
+            const roiText = cfg.roi_index ? `ROI ${cfg.roi_index}` : 'なし';
+            return `検出モデル: ${cfg.face_model || 'hog'}<br>UpSample: ${cfg.upsample || 0}<br>撮影間隔: ${intervalText}<br>類似度閾値: ${similarity}%<br>ROI: ${roiText}`;
+        }
+
+        function updateCfgServiceStatus(running) {
+            const el = document.getElementById('cfgServiceStatus');
+            if (el) {
+                if (running) {
+                    el.textContent = '稼働中';
+                    el.style.background = '#4ecdc4';
+                    el.style.color = '#000';
+                } else {
+                    el.textContent = '停止中';
+                    el.style.background = '#ff6b6b';
+                    el.style.color = '#fff';
+                }
+            }
+        }
+
         function loadConfig() {
+            // 保存済み設定をフォームに読み込む
             fetch('/api/config').then(r => r.json()).then(cfg => {
                 document.getElementById('cfgModel').value = cfg.face_model || 'hog';
                 document.getElementById('cfgUpsample').value = cfg.upsample || 0;
                 document.getElementById('cfgInterval').value = cfg.interval_sec || 5;
-                document.getElementById('cfgTolerance').value = cfg.tolerance || 0.5;
+                const tolerance = cfg.tolerance || 0.5;
+                const similarity = Math.round((1 - tolerance) * 100);
+                document.getElementById('cfgTolerance').value = similarity;
                 if (cfg.roi_index !== undefined && cfg.roi_index !== null && cfg.roi_index !== '') {
                     setTimeout(() => { document.getElementById('cfgRoiSelect').value = cfg.roi_index; }, 500);
                 }
             });
+            // 適用中の設定とサービス状態を読み込む
+            fetch('/api/applied_config').then(r => r.json()).then(data => {
+                updateCfgServiceStatus(data.running);
+                if (data.running && data.config) {
+                    document.getElementById('appliedConfigDisplay').innerHTML = formatConfigDisplay(data.config);
+                } else {
+                    document.getElementById('appliedConfigDisplay').innerHTML = '<span style="color:#888;">サービス停止中</span>';
+                }
+            });
         }
 
-        function saveConfig() {
+        function saveAndApplyConfig() {
+            if (!confirm('設定を保存してサービスを再起動しますか？')) return;
+            const st = document.getElementById('configStatus');
+            const similarityThreshold = parseFloat(document.getElementById('cfgTolerance').value);
+            const tolerance = 1 - similarityThreshold / 100;
             const cfg = {
                 face_model: document.getElementById('cfgModel').value,
                 upsample: parseInt(document.getElementById('cfgUpsample').value),
                 interval_sec: parseInt(document.getElementById('cfgInterval').value),
-                tolerance: parseFloat(document.getElementById('cfgTolerance').value),
+                tolerance: tolerance,
                 roi_index: document.getElementById('cfgRoiSelect').value
             };
+
+            st.textContent = '保存中...';
+            st.style.color = '#ffe66d';
+
+            // 現在のタイムスタンプを記録（新しい設定ファイルがこれより新しいか確認用）
+            const restartTime = Date.now() / 1000;
+
             fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(cfg) })
             .then(r => r.json()).then(data => {
-                const st = document.getElementById('configStatus');
-                if (data.success) { st.textContent = '保存しました（再起動で反映）'; st.style.color = '#4ecdc4'; }
-                else { st.textContent = 'エラー: ' + data.error; st.style.color = '#ff6b6b'; }
-                setTimeout(() => st.textContent = '', 3000);
+                if (!data.success) {
+                    st.textContent = 'エラー: ' + data.error;
+                    st.style.color = '#ff6b6b';
+                    return null;
+                }
+                st.textContent = '再起動中...';
+                return fetch('/api/service_control', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'restart'}) });
+            })
+            .then(r => r ? r.json() : null)
+            .then(data => {
+                if (!data) return;
+                if (data.success) {
+                    st.textContent = 'サービス起動待機中...';
+                    // サービス起動を待つ（ポーリング）- 設定ファイルが更新されるまで待機
+                    let retryCount = 0;
+                    const checkService = () => {
+                        fetch('/api/applied_config?since=' + restartTime).then(r => r.json()).then(result => {
+                            if (result.running && result.config && !result.waiting) {
+                                st.textContent = '設定を反映しました';
+                                st.style.color = '#4ecdc4';
+                                document.getElementById('appliedConfigDisplay').innerHTML = formatConfigDisplay(result.config);
+                                updateCfgServiceStatus(true);
+                                setTimeout(() => st.textContent = '', 3000);
+                            } else if (retryCount < 15) {
+                                retryCount++;
+                                setTimeout(checkService, 1000);
+                            } else {
+                                st.textContent = 'サービス起動待機タイムアウト';
+                                st.style.color = '#ff6b6b';
+                                loadServiceStatus();
+                            }
+                        });
+                    };
+                    setTimeout(checkService, 2000);
+                } else {
+                    st.textContent = 'エラー: ' + (data.error || '再起動失敗');
+                    st.style.color = '#ff6b6b';
+                    setTimeout(() => st.textContent = '', 5000);
+                }
             });
         }
     </script>
@@ -1621,6 +2070,24 @@ def capture():
         return jsonify({"success": False, "error": "カメラエラー"})
     filename = f"capture_{int(time.time())}.jpg"
     cv2.imwrite(os.path.join(CAPTURES_DIR, filename), frame)
+    return jsonify({"success": True, "filename": filename})
+
+@app.route("/capture_service_frame", methods=["POST"])
+def capture_service_frame():
+    """サービスの最新検出画像を撮影画像として保存（オーバーレイなし）"""
+    # クリーンなフレーム（オーバーレイなし）を優先
+    clean_path = os.path.join(DETECTIONS_DIR, "latest_frame_clean.jpg")
+    latest_path = os.path.join(DETECTIONS_DIR, "latest_frame.jpg")
+
+    src_path = clean_path if os.path.exists(clean_path) else latest_path
+    if not os.path.exists(src_path):
+        return jsonify({"success": False, "error": "最新画像がありません"})
+
+    # 最新画像を撮影フォルダにコピー
+    filename = f"capture_{int(time.time())}.jpg"
+    dst_path = os.path.join(CAPTURES_DIR, filename)
+    import shutil
+    shutil.copy2(src_path, dst_path)
     return jsonify({"success": True, "filename": filename})
 
 @app.route("/captures")
@@ -1935,12 +2402,20 @@ def delete_face():
 # テスト機能
 last_recog_result = None
 last_recog_faces = []
+last_recog_original = None
+last_recog_locations = []
+last_recog_roi = None
+last_recog_names = []
 last_detect_result = None
+last_detect_faces = []
+last_detect_original = None
+last_detect_locations = []
+last_detect_roi = None
 
 @app.route("/detect_only", methods=["POST"])
 def detect_only():
     """顔検出のみ（認識なし）"""
-    global last_detect_result
+    global last_detect_result, last_detect_faces, last_detect_original, last_detect_locations, last_detect_roi
     data = request.json
     image = data.get("image")
     model = data.get("model", "hog")
@@ -1952,7 +2427,9 @@ def detect_only():
         return jsonify({"success": False, "error": "画像が見つかりません"})
 
     img = cv2.imread(path)
+    last_detect_original = img.copy()
     roi = get_roi_by_index(roi_index)
+    last_detect_roi = roi
 
     if roi:
         x, y, rw, rh = roi["x"], roi["y"], roi["w"], roi["h"]
@@ -1968,25 +2445,83 @@ def detect_only():
     face_locations = face_recognition.face_locations(rgb, model=model, number_of_times_to_upsample=upsample)
     elapsed = round(time.time() - start, 2)
 
+    # 顔の切り抜きと座標を保存
+    last_detect_faces = []
+    last_detect_locations = []
+    faces_info = []
     for (top, right, bottom, left) in face_locations:
         orig_top = top + roi_offset[1]
         orig_right = right + roi_offset[0]
         orig_bottom = bottom + roi_offset[1]
         orig_left = left + roi_offset[0]
-        cv2.rectangle(img, (orig_left, orig_top), (orig_right, orig_bottom), (0, 255, 0), 2)
 
+        # 座標を保存
+        last_detect_locations.append((orig_top, orig_right, orig_bottom, orig_left))
+
+        # 切り抜き画像を保存
+        face_img = last_detect_original[orig_top:orig_bottom, orig_left:orig_right]
+        last_detect_faces.append(face_img)
+        faces_info.append({
+            "width": orig_right - orig_left,
+            "height": orig_bottom - orig_top
+        })
+
+    # デフォルト表示用（BBox・ROI両方表示）
+    for (orig_top, orig_right, orig_bottom, orig_left) in last_detect_locations:
+        cv2.rectangle(img, (orig_left, orig_top), (orig_right, orig_bottom), (0, 255, 0), 2)
     if roi:
         cv2.rectangle(img, (roi["x"], roi["y"]), (roi["x"]+roi["w"], roi["y"]+roi["h"]), (0, 212, 255), 2)
 
     last_detect_result = img
 
-    return jsonify({"success": True, "count": len(face_locations), "time": elapsed})
+    return jsonify({
+        "success": True,
+        "count": len(face_locations),
+        "time": elapsed,
+        "roi_used": roi is not None,
+        "faces": faces_info
+    })
 
 @app.route("/detect_result")
 def detect_result():
     if last_detect_result is None:
         return "No result", 404
     _, jpeg = cv2.imencode('.jpg', last_detect_result)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/detect_result_render")
+def detect_result_render():
+    """BBox/ROI表示を切替えて検出結果画像を返す"""
+    global last_detect_original, last_detect_locations, last_detect_roi
+    if last_detect_original is None:
+        return "No result", 404
+
+    show_bbox = request.args.get('show_bbox', 'true').lower() == 'true'
+    show_roi = request.args.get('show_roi', 'true').lower() == 'true'
+
+    img = last_detect_original.copy()
+
+    if show_bbox:
+        for (top, right, bottom, left) in last_detect_locations:
+            cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
+
+    if show_roi and last_detect_roi:
+        roi = last_detect_roi
+        cv2.rectangle(img, (roi["x"], roi["y"]), (roi["x"]+roi["w"], roi["y"]+roi["h"]), (0, 212, 255), 2)
+
+    _, jpeg = cv2.imencode('.jpg', img)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/detect_face/<int:index>")
+def detect_face(index):
+    """検出した顔の切り抜き画像を返す"""
+    global last_detect_faces
+    if last_detect_faces is None or index >= len(last_detect_faces):
+        return "Not found", 404
+    face_img = last_detect_faces[index]
+    if face_img is None or face_img.size == 0:
+        return "Invalid face", 404
+    _, jpeg = cv2.imencode('.jpg', face_img)
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
 @app.route("/recognize_face", methods=["POST"])
@@ -2014,26 +2549,45 @@ def recognize_face():
         return jsonify({"success": False, "error": "エンコーディングの読み込みに失敗しました"})
 
     img = face_recognition.load_image_file(path)
+
+    # まず通常の顔検出を試みる
     encodings = face_recognition.face_encodings(img)
 
+    # 検出できない場合、画像全体を顔として扱う（既に切り抜き済みの顔画像のため）
     if len(encodings) == 0:
-        return jsonify({"success": False, "error": "顔が検出できませんでした"})
+        h, w = img.shape[:2]
+        face_location = [(0, w, h, 0)]  # top, right, bottom, left
+        encodings = face_recognition.face_encodings(img, face_location)
+
+    if len(encodings) == 0:
+        return jsonify({"success": False, "error": "顔のエンコードに失敗しました"})
 
     enc = encodings[0]
     distances = face_recognition.face_distance(known_encodings, enc)
 
     if len(distances) == 0:
-        return jsonify({"success": True, "name": "unknown", "distance": 1.0})
+        return jsonify({"success": True, "name": "unknown", "distance": 1.0, "all_distances": {}})
+
+    # 各ラベルごとの最小距離を計算
+    label_distances = {}
+    for i, (dist, label_name) in enumerate(zip(distances, known_names)):
+        if label_name not in label_distances or dist < label_distances[label_name]:
+            label_distances[label_name] = float(dist)
 
     min_idx = distances.argmin()
     min_distance = distances[min_idx]
     name = known_names[min_idx] if min_distance <= tolerance else "unknown"
 
-    return jsonify({"success": True, "name": name, "distance": float(min_distance)})
+    return jsonify({
+        "success": True,
+        "name": name,
+        "distance": float(min_distance),
+        "all_distances": label_distances
+    })
 
 @app.route("/recognize", methods=["POST"])
 def recognize():
-    global last_recog_result, last_recog_faces
+    global last_recog_result, last_recog_faces, last_recog_original, last_recog_locations, last_recog_roi, last_recog_names
     data = request.json
     image = data.get("image")
     model = data.get("model", "hog")
@@ -2059,7 +2613,9 @@ def recognize():
         return jsonify({"success": False, "error": "エンコーディングの読み込みに失敗しました"})
 
     img = cv2.imread(path)
+    last_recog_original = img.copy()
     roi = get_roi_by_index(roi_index)
+    last_recog_roi = roi
     roi_used = roi is not None
 
     if roi:
@@ -2079,6 +2635,8 @@ def recognize():
 
     faces = []
     last_recog_faces = []
+    last_recog_locations = []
+    last_recog_names = []
 
     for i, (enc, (top, right, bottom, left)) in enumerate(zip(face_encodings, face_locations)):
         orig_top = top + roi_offset[1]
@@ -2096,6 +2654,8 @@ def recognize():
             name = known_names[min_idx] if min_distance <= tolerance else "unknown"
 
         faces.append({"name": name, "distance": float(min_distance)})
+        last_recog_locations.append((orig_top, orig_right, orig_bottom, orig_left))
+        last_recog_names.append((name, min_distance))
 
         # 顔画像を保存
         margin = int((orig_bottom - orig_top) * 0.2)
@@ -2103,13 +2663,14 @@ def recognize():
         crop_left = max(0, orig_left - margin)
         crop_bottom = min(img.shape[0], orig_bottom + margin)
         crop_right = min(img.shape[1], orig_right + margin)
-        face_crop = img[crop_top:crop_bottom, crop_left:crop_right]
+        face_crop = last_recog_original[crop_top:crop_bottom, crop_left:crop_right]
         last_recog_faces.append(face_crop)
 
         # 描画
         color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
         cv2.rectangle(img, (orig_left, orig_top), (orig_right, orig_bottom), color, 2)
-        cv2.putText(img, f"{name} ({min_distance:.2f})", (orig_left, orig_top - 10),
+        similarity = max(0, (1 - min_distance) * 100)
+        cv2.putText(img, f"{name} ({similarity:.0f}%)", (orig_left, orig_top - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     if roi:
@@ -2124,6 +2685,33 @@ def recog_result():
     if last_recog_result is None:
         return "No result", 404
     _, jpeg = cv2.imencode('.jpg', last_recog_result)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/recog_result_render")
+def recog_result_render():
+    """BBox/ROI表示を切替えて認識結果画像を返す"""
+    global last_recog_original, last_recog_locations, last_recog_roi, last_recog_names
+    if last_recog_original is None:
+        return "No result", 404
+
+    show_bbox = request.args.get('show_bbox', 'true').lower() == 'true'
+    show_roi = request.args.get('show_roi', 'true').lower() == 'true'
+
+    img = last_recog_original.copy()
+
+    if show_bbox:
+        for (top, right, bottom, left), (name, distance) in zip(last_recog_locations, last_recog_names):
+            color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
+            cv2.rectangle(img, (left, top), (right, bottom), color, 2)
+            similarity = max(0, (1 - distance) * 100)
+            cv2.putText(img, f"{name} ({similarity:.0f}%)", (left, top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+    if show_roi and last_recog_roi:
+        roi = last_recog_roi
+        cv2.rectangle(img, (roi["x"], roi["y"]), (roi["x"]+roi["w"], roi["y"]+roi["h"]), (0, 212, 255), 2)
+
+    _, jpeg = cv2.imencode('.jpg', img)
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
 @app.route("/recog_face/<int:idx>")
@@ -2186,7 +2774,8 @@ def api_dashboard():
     global last_detection_image, last_detection_meta
     config = load_config()
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
-    interval_sec = config.get("interval_sec", 5)
+    # 視聴中断とみなす閾値（秒）- この時間以上空いたら別セッション
+    gap_threshold_sec = 120  # 2分
 
     registered_labels = get_registered_labels()
     first_registered = get_first_registered_date()
@@ -2201,6 +2790,8 @@ def api_dashboard():
     detection_3h = {name: [False] * 180 for name in registered_labels}  # 3時間 = 180分
 
     current_group = None
+    # 各人物・各日の最後の検出時刻を追跡
+    last_detection_by_name_date = defaultdict(dict)  # {name: {date: last_timestamp}}
 
     if os.path.exists(log_path):
         try:
@@ -2222,7 +2813,15 @@ def api_dashboard():
                             continue
 
                         date_str = ts.strftime("%Y-%m-%d")
-                        daily_minutes[date_str][name] += interval_sec / 60.0
+
+                        # タイムスタンプ間の時間を計算
+                        if date_str in last_detection_by_name_date[name]:
+                            last_ts = last_detection_by_name_date[name][date_str]
+                            diff_sec = (ts - last_ts).total_seconds()
+                            # 閾値以内なら視聴時間としてカウント
+                            if 0 < diff_sec <= gap_threshold_sec:
+                                daily_minutes[date_str][name] += diff_sec / 60.0
+                        last_detection_by_name_date[name][date_str] = ts
 
                         # 直近3時間のバーコード
                         if ts >= three_hours_ago:
@@ -2232,13 +2831,16 @@ def api_dashboard():
 
                         # 検出ログのグループ化（同じ秒は1レコード）
                         ts_key = row["timestamp"]
+                        # 検出画像ファイル名を生成
+                        img_ts = ts.strftime("%Y%m%d_%H%M%S")
                         if current_group and current_group["timestamp"] == ts_key:
                             if name not in current_group["names"]:
                                 current_group["names"].append(name)
+                                current_group["images"].append(f"detection_{img_ts}_{name}.jpg")
                         else:
                             if current_group:
                                 recent_grouped.append(current_group)
-                            current_group = {"timestamp": ts_key, "names": [name]}
+                            current_group = {"timestamp": ts_key, "names": [name], "images": [f"detection_{img_ts}_{name}.jpg"]}
                     except:
                         continue
                 if current_group:
@@ -2335,6 +2937,20 @@ def api_latest_image():
     _, jpeg = cv2.imencode('.jpg', img)
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
+@app.route("/api/service_frame")
+def api_service_frame():
+    """サービスが撮像中の最新フレームを返す"""
+    latest_path = os.path.join(DETECTIONS_DIR, "latest_frame.jpg")
+    if os.path.exists(latest_path):
+        # ファイルの更新時間をチェック（60秒以内なら有効）
+        mtime = os.path.getmtime(latest_path)
+        if time.time() - mtime < 60:
+            img = cv2.imread(latest_path)
+            if img is not None:
+                _, jpeg = cv2.imencode('.jpg', img)
+                return Response(jpeg.tobytes(), mimetype='image/jpeg')
+    return "No recent frame", 404
+
 @app.route("/api/distribution")
 def api_distribution():
     """指定日の時間帯別視聴時間"""
@@ -2344,10 +2960,12 @@ def api_distribution():
 
     config = load_config()
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
-    interval_sec = config.get("interval_sec", 5)
+    gap_threshold_sec = 120  # 2分
     registered_labels = get_registered_labels()
 
     hourly = defaultdict(lambda: defaultdict(float))
+    # 各人物の最後の検出時刻を追跡
+    last_detection_by_name = {}
 
     if os.path.exists(log_path):
         try:
@@ -2362,7 +2980,14 @@ def api_distribution():
                         date_str = ts.strftime("%Y-%m-%d")
                         if date_str == date:
                             hour_str = ts.strftime("%H")
-                            hourly[hour_str][name] += interval_sec / 60.0
+                            # タイムスタンプ間の時間を計算
+                            if name in last_detection_by_name:
+                                last_ts = last_detection_by_name[name]
+                                diff_sec = (ts - last_ts).total_seconds()
+                                if 0 < diff_sec <= gap_threshold_sec:
+                                    # 時間をまたぐ場合は現在の時間帯に計上
+                                    hourly[hour_str][name] += diff_sec / 60.0
+                            last_detection_by_name[name] = ts
                     except:
                         continue
         except:
@@ -2384,7 +3009,7 @@ def api_trend():
 
     config = load_config()
     log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
-    interval_sec = config.get("interval_sec", 5)
+    gap_threshold_sec = 120  # 2分
     registered_labels = get_registered_labels()
 
     try:
@@ -2394,6 +3019,8 @@ def api_trend():
         return jsonify({"error": "invalid date format"})
 
     daily = defaultdict(lambda: defaultdict(float))
+    # 各人物・各日の最後の検出時刻を追跡
+    last_detection_by_name_date = defaultdict(dict)
 
     if os.path.exists(log_path):
         try:
@@ -2408,7 +3035,13 @@ def api_trend():
                         date_str = ts.strftime("%Y-%m-%d")
                         row_date = datetime.strptime(date_str, "%Y-%m-%d")
                         if start_date <= row_date <= end_date:
-                            daily[date_str][name] += interval_sec / 60.0
+                            # タイムスタンプ間の時間を計算
+                            if date_str in last_detection_by_name_date[name]:
+                                last_ts = last_detection_by_name_date[name][date_str]
+                                diff_sec = (ts - last_ts).total_seconds()
+                                if 0 < diff_sec <= gap_threshold_sec:
+                                    daily[date_str][name] += diff_sec / 60.0
+                            last_detection_by_name_date[name][date_str] = ts
                     except:
                         continue
         except:
@@ -2449,7 +3082,7 @@ def api_label_status():
     if os.path.exists(FACES_DIR):
         for f in os.listdir(FACES_DIR):
             if f.endswith('.jpg'):
-                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                json_path = os.path.join(FACES_DIR, f + '.json')
                 if os.path.exists(json_path):
                     try:
                         with open(json_path, 'r') as jf:
@@ -2465,29 +3098,28 @@ def api_label_status():
 
 @app.route("/api/delete_label", methods=["POST"])
 def api_delete_label():
-    """画像未登録のラベルを削除"""
+    """ラベルを削除（画像のラベルも解除）"""
     name = request.json.get('name')
     if not name:
         return jsonify({"success": False, "error": "name required"})
 
-    # 画像があるか確認
-    has_images = False
+    # 顔画像のJSONからラベルを解除
+    cleared_count = 0
     if os.path.exists(FACES_DIR):
         for f in os.listdir(FACES_DIR):
             if f.endswith('.jpg'):
-                json_path = os.path.join(FACES_DIR, f.replace('.jpg', '.json'))
+                json_path = os.path.join(FACES_DIR, f + '.json')
                 if os.path.exists(json_path):
                     try:
                         with open(json_path, 'r') as jf:
                             data = json.load(jf)
-                            if data.get('label') == name:
-                                has_images = True
-                                break
+                        if data.get('label') == name:
+                            data['label'] = ''
+                            with open(json_path, 'w') as jf:
+                                json.dump(data, jf)
+                            cleared_count += 1
                     except:
                         pass
-
-    if has_images:
-        return jsonify({"success": False, "error": "このラベルには画像が登録されています"})
 
     # エンコードファイルからラベルを削除
     if os.path.exists(ENCODINGS_PATH):
@@ -2504,12 +3136,74 @@ def api_delete_label():
 
             with open(ENCODINGS_PATH, 'wb') as f:
                 pickle.dump({'encodings': new_encodings, 'names': new_names}, f)
-
-            return jsonify({"success": True})
         except Exception as e:
             return jsonify({"success": False, "error": str(e)})
 
-    return jsonify({"success": True})
+    return jsonify({"success": True, "cleared": cleared_count})
+
+@app.route("/api/rename_label", methods=["POST"])
+def api_rename_label():
+    """ラベル名を変更"""
+    old_name = request.json.get('old_name', '').strip().lower()
+    new_name = request.json.get('new_name', '').strip().lower()
+
+    if not old_name or not new_name:
+        return jsonify({"success": False, "error": "ラベル名が必要です"})
+
+    if old_name == new_name:
+        return jsonify({"success": True})
+
+    # 新しいラベル名が既に存在するかチェック
+    existing_labels = set()
+    if os.path.exists(FACES_DIR):
+        for f in os.listdir(FACES_DIR):
+            if f.endswith('.jpg'):
+                json_path = os.path.join(FACES_DIR, f + '.json')
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, 'r') as jf:
+                            data = json.load(jf)
+                            if data.get('label'):
+                                existing_labels.add(data.get('label'))
+                    except:
+                        pass
+
+    if new_name in existing_labels and new_name != old_name:
+        return jsonify({"success": False, "error": f"ラベル '{new_name}' は既に存在します"})
+
+    # 顔画像のJSONファイルを更新
+    updated_count = 0
+    if os.path.exists(FACES_DIR):
+        for f in os.listdir(FACES_DIR):
+            if f.endswith('.jpg'):
+                json_path = os.path.join(FACES_DIR, f + '.json')
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, 'r') as jf:
+                            data = json.load(jf)
+                        if data.get('label') == old_name:
+                            data['label'] = new_name
+                            with open(json_path, 'w') as jf:
+                                json.dump(data, jf)
+                            updated_count += 1
+                    except:
+                        pass
+
+    # エンコードファイルのラベルを更新
+    if os.path.exists(ENCODINGS_PATH):
+        try:
+            with open(ENCODINGS_PATH, 'rb') as f:
+                enc_data = pickle.load(f)
+
+            new_names = [new_name if n == old_name else n for n in enc_data.get('names', [])]
+            enc_data['names'] = new_names
+
+            with open(ENCODINGS_PATH, 'wb') as f:
+                pickle.dump(enc_data, f)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"エンコード更新エラー: {str(e)}"})
+
+    return jsonify({"success": True, "updated": updated_count})
 
 @app.route("/detection_image/<filename>")
 def detection_image(filename):
@@ -2517,6 +3211,63 @@ def detection_image(filename):
     if os.path.exists(path):
         return send_file(path, mimetype='image/jpeg')
     return "Not found", 404
+
+@app.route("/detection_render/<timestamp>")
+def detection_render(timestamp):
+    """検出画像を動的にレンダリング（BBox/ROI/スコア表示切替対応）"""
+    show_bbox = request.args.get('bbox', 'true').lower() == 'true'
+    show_roi = request.args.get('roi', 'true').lower() == 'true'
+    show_score = request.args.get('score', 'true').lower() == 'true'
+
+    # 元画像とメタデータを読み込む
+    orig_path = os.path.join(DETECTIONS_DIR, f"detection_{timestamp}_original.jpg")
+    meta_path = os.path.join(DETECTIONS_DIR, f"detection_{timestamp}_meta.json")
+
+    if not os.path.exists(orig_path):
+        # 元画像がない場合は旧形式の画像を探す
+        import glob
+        old_files = glob.glob(os.path.join(DETECTIONS_DIR, f"detection_{timestamp}_*.jpg"))
+        old_files = [f for f in old_files if not f.endswith("_original.jpg")]
+        if old_files:
+            return send_file(old_files[0], mimetype='image/jpeg')
+        return "Not found", 404
+
+    img = cv2.imread(orig_path)
+    if img is None:
+        return "Failed to load image", 500
+
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, 'r') as f:
+                meta = json.load(f)
+        except:
+            pass
+
+    # ROI描画
+    if show_roi and meta.get("roi"):
+        roi = meta["roi"]
+        cv2.rectangle(img, (roi["x"], roi["y"]),
+                      (roi["x"] + roi["w"], roi["y"] + roi["h"]), (0, 212, 255), 2)
+
+    # BBox描画
+    if show_bbox and meta.get("faces"):
+        for face in meta["faces"]:
+            bbox = face["bbox"]
+            name = face["name"]
+            similarity = face.get("similarity", 0)
+            color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
+            cv2.rectangle(img, (bbox["left"], bbox["top"]),
+                          (bbox["right"], bbox["bottom"]), color, 2)
+            if show_score:
+                label = f"{name} ({similarity:.0f}%)"
+            else:
+                label = name
+            cv2.putText(img, label, (bbox["left"], bbox["top"] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+    _, jpeg = cv2.imencode('.jpg', img)
+    return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
 @app.route("/api/service_status")
 def api_service_status():
@@ -2526,6 +3277,37 @@ def api_service_status():
     except:
         running = False
     return jsonify({"running": running})
+
+@app.route("/api/applied_config")
+def api_applied_config():
+    """サービスが実際に使用している設定を返す"""
+    since = request.args.get('since', type=float)  # タイムスタンプ（オプション）
+
+    try:
+        result = subprocess.run(["systemctl", "is-active", "tv-watch-tracker"], capture_output=True, text=True)
+        running = result.stdout.strip() == "active"
+    except:
+        running = False
+
+    if not running:
+        return jsonify({"running": False, "config": None, "mtime": None})
+
+    # サービス起動時に保存された設定を読む
+    applied_config_path = os.path.expanduser("~/tv_watch_applied_config.json")
+    if os.path.exists(applied_config_path):
+        try:
+            mtime = os.path.getmtime(applied_config_path)
+            # sinceが指定されている場合、ファイルがそれより新しいかチェック
+            if since and mtime < since:
+                return jsonify({"running": True, "config": None, "mtime": mtime, "waiting": True})
+            with open(applied_config_path, 'r') as f:
+                config = json.load(f)
+            return jsonify({"running": True, "config": config, "mtime": mtime})
+        except:
+            pass
+
+    # フォールバック: 保存済み設定を返す
+    return jsonify({"running": True, "config": load_config(), "mtime": None})
 
 @app.route("/api/service_control", methods=["POST"])
 def api_service_control():

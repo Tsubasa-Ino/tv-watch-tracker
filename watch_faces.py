@@ -133,7 +133,20 @@ def main():
     FACE_MODEL = config["face_model"]
     UPSAMPLE = config["upsample"]
     RESIZE_WIDTH = config.get("resize_width", 640)
+
+    # ROI設定：roi_indexとroi_presetsから適用するROIを決定
     ROI = config.get("roi")
+    roi_index = config.get("roi_index", "")
+    roi_presets = config.get("roi_presets", [])
+    if roi_index and roi_presets:
+        try:
+            idx = int(roi_index) - 1  # 1-based to 0-based
+            if 0 <= idx < len(roi_presets):
+                ROI = roi_presets[idx]
+                logger.info("ROIプリセット %s を適用: %s", roi_index, ROI.get("name", ""))
+        except (ValueError, IndexError) as e:
+            logger.warning("ROIプリセットの適用に失敗: %s", e)
+
     USE_ROI = config.get("use_roi", True)
     CAMERA_RETRY_SEC = config["camera_retry_sec"]
     MAX_CAMERA_RETRIES = config["max_camera_retries"]
@@ -144,6 +157,21 @@ def main():
     # 検出画像保存ディレクトリ作成
     if SAVE_DETECTIONS:
         os.makedirs(DETECTIONS_DIR, exist_ok=True)
+
+    # 適用中の設定を保存（管理画面で参照用）
+    applied_config = {
+        "face_model": FACE_MODEL,
+        "upsample": UPSAMPLE,
+        "interval_sec": INTERVAL_SEC,
+        "tolerance": TOLERANCE,
+        "roi_index": config.get("roi_index", "")
+    }
+    try:
+        import json
+        with open(os.path.expanduser("~/tv_watch_applied_config.json"), 'w') as f:
+            json.dump(applied_config, f)
+    except Exception as e:
+        logger.warning("適用設定の保存に失敗: %s", e)
 
     logger.info("検出設定: model=%s, upsample=%d, resize=%d, ROI=%s",
                 FACE_MODEL, UPSAMPLE, RESIZE_WIDTH, "有効" if (USE_ROI and ROI) else "無効")
@@ -184,12 +212,21 @@ def main():
             consecutive_failures = 0
 
             try:
+                # 元フレームを保存（ROI適用前）
+                full_frame = frame.copy()
+
                 # ROI適用（ピクセル値）
+                roi_info = None  # メタデータ保存用
+                roi_offset_x = 0
+                roi_offset_y = 0
                 if USE_ROI and ROI:
+                    roi_info = {"x": ROI["x"], "y": ROI["y"], "w": ROI["w"], "h": ROI["h"]}
                     x1 = ROI["x"]
                     y1 = ROI["y"]
                     x2 = x1 + ROI["w"]
                     y2 = y1 + ROI["h"]
+                    roi_offset_x = x1
+                    roi_offset_y = y1
                     frame = frame[y1:y2, x1:x2]
 
                 # 縮小処理（メモリ節約）
@@ -225,47 +262,106 @@ def main():
                         continue
 
                     best_index = face_distances.argmin()
+                    best_distance = float(face_distances[best_index])
                     name = "unknown"
                     if matches[best_index]:
                         name = known_names[best_index]
 
                     seen_names.add(name)
                     if i < len(face_locations):
-                        face_results.append((name, face_locations[i]))
+                        face_results.append((name, face_locations[i], best_distance))
 
                 ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 write_log(LOG_PATH, ts, seen_names)
 
+                # 最新フレームを常に保存（フルフレームにROI枠とBBox付き）
+                latest_frame = full_frame.copy()
+                # ROI枠を描画（オレンジ色）
+                if roi_info:
+                    cv2.rectangle(latest_frame,
+                                  (roi_info["x"], roi_info["y"]),
+                                  (roi_info["x"] + roi_info["w"], roi_info["y"] + roi_info["h"]),
+                                  (0, 165, 255), 2)
+                # BBox描画（座標をフルフレーム基準に変換）
+                for name, (top, right, bottom, left), dist in face_results:
+                    color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
+                    similarity = max(0, (1 - dist) * 100)
+                    # ROIオフセットを加算してフルフレーム座標に変換
+                    abs_left = left + roi_offset_x
+                    abs_top = top + roi_offset_y
+                    abs_right = right + roi_offset_x
+                    abs_bottom = bottom + roi_offset_y
+                    cv2.rectangle(latest_frame, (abs_left, abs_top), (abs_right, abs_bottom), color, 2)
+                    cv2.putText(latest_frame, f"{name} ({similarity:.0f}%)", (abs_left, abs_top - 10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                latest_path = os.path.join(DETECTIONS_DIR, "latest_frame.jpg")
+                cv2.imwrite(latest_path, latest_frame)
+
+                # クリーンなフレームも保存（撮影用、オーバーレイなし）
+                clean_path = os.path.join(DETECTIONS_DIR, "latest_frame_clean.jpg")
+                cv2.imwrite(clean_path, full_frame)
+
                 if seen_names:
                     logger.info("%s -> %s", ts, ", ".join(sorted(seen_names)))
 
-                    # 検出画像を保存（BBOX付き）
+                    # 検出画像を保存
                     if SAVE_DETECTIONS and face_results:
-                        # 画像にBBOXを描画
-                        img_with_bbox = frame.copy()
-                        for name, (top, right, bottom, left) in face_results:
-                            color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
-                            cv2.rectangle(img_with_bbox, (left, top), (right, bottom), color, 2)
-                            cv2.putText(img_with_bbox, name, (left, top - 10),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-                        # 各検出者ごとに画像を保存
                         timestamp_str = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                        # 元画像を保存（フルフレーム、オーバーレイなし）
+                        orig_filename = f"detection_{timestamp_str}_original.jpg"
+                        orig_filepath = os.path.join(DETECTIONS_DIR, orig_filename)
+                        cv2.imwrite(orig_filepath, full_frame)
+
+                        # メタデータを保存（座標はフルフレーム基準）
+                        import json
+                        meta = {
+                            "timestamp": timestamp_str,
+                            "roi": roi_info,
+                            "faces": []
+                        }
+                        for name, (top, right, bottom, left), dist in face_results:
+                            # ROIオフセットを加算してフルフレーム座標に変換
+                            meta["faces"].append({
+                                "name": name,
+                                "bbox": {
+                                    "top": top + roi_offset_y,
+                                    "right": right + roi_offset_x,
+                                    "bottom": bottom + roi_offset_y,
+                                    "left": left + roi_offset_x
+                                },
+                                "distance": dist,
+                                "similarity": max(0, (1 - dist) * 100)
+                            })
+                        meta_filename = f"detection_{timestamp_str}_meta.json"
+                        meta_filepath = os.path.join(DETECTIONS_DIR, meta_filename)
+                        with open(meta_filepath, 'w') as f:
+                            json.dump(meta, f)
+
+                        # 各検出者ごとにファイル名を記録（互換性のため）
                         for name in seen_names:
                             if name != "unknown":
                                 filename = f"detection_{timestamp_str}_{name}.jpg"
-                                filepath = os.path.join(DETECTIONS_DIR, filename)
-                                cv2.imwrite(filepath, img_with_bbox)
+                                # シンボリックリンクまたはコピーの代わりにメタファイルを参照
 
-                        # 古い画像を削除
+                        # 古いファイルを削除
                         import glob as glob_module
-                        all_images = sorted(glob_module.glob(os.path.join(DETECTIONS_DIR, "*.jpg")))
-                        if len(all_images) > MAX_DETECTION_IMAGES:
-                            for old_img in all_images[:-MAX_DETECTION_IMAGES]:
-                                try:
-                                    os.remove(old_img)
-                                except:
-                                    pass
+                        all_files = sorted(glob_module.glob(os.path.join(DETECTIONS_DIR, "detection_*")))
+                        # original.jpg, meta.json, name.jpg のセットを数える
+                        timestamps = set()
+                        for f in all_files:
+                            base = os.path.basename(f)
+                            if base.startswith("detection_") and "_" in base[10:]:
+                                ts_part = base[10:25]  # YYYYMMDD_HHMMSS
+                                timestamps.add(ts_part)
+                        if len(timestamps) > MAX_DETECTION_IMAGES:
+                            old_timestamps = sorted(timestamps)[:-MAX_DETECTION_IMAGES]
+                            for old_ts in old_timestamps:
+                                for old_file in glob_module.glob(os.path.join(DETECTIONS_DIR, f"detection_{old_ts}*")):
+                                    try:
+                                        os.remove(old_file)
+                                    except:
+                                        pass
                 else:
                     logger.debug("%s -> none", ts)
 
