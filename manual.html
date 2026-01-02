@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TV Watch Tracker マニュアル</title>
+    <style>
+        :root {
+            --primary: #00d4ff;
+            --secondary: #ffe66d;
+            --success: #4ecdc4;
+            --danger: #ff6b6b;
+            --dark: #1a1a2e;
+            --darker: #16213e;
+            --darkest: #0f3460;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--dark);
+            color: #fff;
+            line-height: 1.7;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: linear-gradient(135deg, var(--darker), var(--darkest));
+            padding: 40px 20px;
+            text-align: center;
+            border-bottom: 3px solid var(--primary);
+        }
+        header h1 {
+            color: var(--primary);
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        header p {
+            color: #888;
+            font-size: 1.1em;
+        }
+        nav {
+            background: var(--darker);
+            padding: 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid #333;
+        }
+        nav ul {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        nav a {
+            color: #888;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            transition: all 0.3s;
+            font-size: 0.9em;
+        }
+        nav a:hover {
+            color: var(--primary);
+            background: var(--darkest);
+        }
+        section {
+            background: var(--darker);
+            margin: 20px 0;
+            padding: 30px;
+            border-radius: 12px;
+            border-left: 4px solid var(--primary);
+        }
+        h2 {
+            color: var(--primary);
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        h3 {
+            color: var(--secondary);
+            font-size: 1.3em;
+            margin: 25px 0 15px;
+        }
+        h4 {
+            color: var(--success);
+            font-size: 1.1em;
+            margin: 20px 0 10px;
+        }
+        p { margin: 15px 0; }
+        ul, ol {
+            margin: 15px 0 15px 25px;
+        }
+        li { margin: 8px 0; }
+        code {
+            background: var(--darkest);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.9em;
+            color: var(--secondary);
+        }
+        pre {
+            background: var(--darkest);
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            border: 1px solid #333;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+            color: #fff;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+        th {
+            background: var(--darkest);
+            color: var(--primary);
+            font-weight: 600;
+        }
+        tr:hover { background: rgba(0, 212, 255, 0.05); }
+        .card {
+            background: var(--darkest);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .card-title {
+            color: var(--secondary);
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .tip {
+            background: rgba(78, 205, 196, 0.1);
+            border-left: 4px solid var(--success);
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .tip::before {
+            content: "💡 Tip: ";
+            color: var(--success);
+            font-weight: bold;
+        }
+        .warning {
+            background: rgba(255, 107, 107, 0.1);
+            border-left: 4px solid var(--danger);
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning::before {
+            content: "⚠️ 注意: ";
+            color: var(--danger);
+            font-weight: bold;
+        }
+        .step {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            align-items: flex-start;
+        }
+        .step-number {
+            background: var(--primary);
+            color: var(--dark);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            flex-shrink: 0;
+        }
+        .step-content { flex: 1; }
+        .tab-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .tab-item {
+            background: var(--darkest);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-item:hover {
+            border-color: var(--primary);
+        }
+        .tab-item .name {
+            color: var(--primary);
+            font-weight: bold;
+        }
+        .tab-item .desc {
+            color: #888;
+            font-size: 0.85em;
+            margin-top: 5px;
+        }
+        .flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .flow-item {
+            background: var(--darkest);
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: var(--primary);
+            font-weight: bold;
+        }
+        .flow-arrow {
+            color: #888;
+            font-size: 1.5em;
+        }
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+            border-top: 1px solid #333;
+            margin-top: 40px;
+        }
+        @media (max-width: 768px) {
+            header h1 { font-size: 1.8em; }
+            section { padding: 20px; }
+            .step { flex-direction: column; }
+            nav a { padding: 6px 12px; font-size: 0.8em; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>TV Watch Tracker</h1>
+        <p>Raspberry Pi + 顔認識で家族のテレビ視聴時間を自動トラッキング</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="#overview">概要</a></li>
+            <li><a href="#setup">セットアップ</a></li>
+            <li><a href="#tabs">各タブの使い方</a></li>
+            <li><a href="#settings">設定項目</a></li>
+            <li><a href="#tips">運用Tips</a></li>
+            <li><a href="#troubleshooting">トラブルシューティング</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <section id="overview">
+            <h2>概要</h2>
+            <p>TV Watch Tracker は、USB カメラで定期的に撮影し、顔認識によって誰がテレビを見ているかを自動記録するシステムです。</p>
+
+            <h3>主な機能</h3>
+            <ul>
+                <li><strong>自動顔認識</strong>: 設定間隔で撮影→顔検出→人物特定→ログ記録</li>
+                <li><strong>Web UI</strong>: ブラウザから全ての設定・管理が可能</li>
+                <li><strong>ダッシュボード</strong>: 視聴時間をグラフで可視化</li>
+                <li><strong>再ラベリング</strong>: 誤認識を修正して精度向上</li>
+                <li><strong>スマホ対応</strong>: 外出先からも確認可能（Tailscale使用）</li>
+            </ul>
+
+            <h3>作業フロー</h3>
+            <div class="flow">
+                <div class="flow-item">撮影</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-item">ROI設定</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-item">顔抽出</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-item">顔登録</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-item">テスト</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-item">運用開始</div>
+            </div>
+            <p>Web UI のタブは左から順に作業フローに沿って配置されています。</p>
+        </section>
+
+        <section id="setup">
+            <h2>セットアップ</h2>
+
+            <h3>必要なもの</h3>
+            <ul>
+                <li>Raspberry Pi 4（4GB推奨）</li>
+                <li>USB カメラ</li>
+                <li>Python 3.9 以上</li>
+            </ul>
+
+            <h3>インストール手順</h3>
+
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>依存関係のインストール</h4>
+                    <pre><code>python3 -m venv venv
+source venv/bin/activate
+pip install opencv-python face_recognition flask</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>設定ファイル作成</h4>
+                    <pre><code>cp config.json.example config.json</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>Web UI 起動</h4>
+                    <pre><code>python face_manager_app.py</code></pre>
+                    <p>ブラウザで <code>http://&lt;ラズパイIP&gt;:5002</code> にアクセス</p>
+                </div>
+            </div>
+
+            <h3>サービス化（自動起動）</h3>
+            <pre><code># 顔認識サービス
+sudo cp tv-watch-tracker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable tv-watch-tracker
+sudo systemctl start tv-watch-tracker</code></pre>
+        </section>
+
+        <section id="tabs">
+            <h2>各タブの使い方</h2>
+
+            <div class="card">
+                <div class="card-title">撮影タブ</div>
+                <p><strong>目的</strong>: 顔登録用の画像を撮影する</p>
+                <ul>
+                    <li>サービス停止中: リアルタイムプレビューから撮影</li>
+                    <li>サービス稼働中: 検出画像を表示（ROI/BBox表示切替可能）</li>
+                </ul>
+                <div class="tip">1人につき10〜15枚、様々な角度・表情で撮影すると認識精度が向上します。</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">ROI設定タブ</div>
+                <p><strong>目的</strong>: 顔検出する範囲を限定する</p>
+                <ul>
+                    <li>撮影画像を選択</li>
+                    <li>マウスドラッグで検出範囲を指定</li>
+                    <li>「ROI追加保存」でプリセット保存</li>
+                </ul>
+                <div class="tip">ROI設定で処理負荷を大幅に削減でき、誤検出も減ります。</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">顔抽出タブ</div>
+                <p><strong>目的</strong>: 撮影画像から顔部分を切り出す</p>
+                <ul>
+                    <li>検出モデル・upsample を選択</li>
+                    <li>画像を選択して「検出実行」</li>
+                    <li>検出された顔を確認して「保存」</li>
+                </ul>
+                <div class="warning">upsample を上げすぎるとメモリ不足になることがあります。</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">顔登録タブ</div>
+                <p><strong>目的</strong>: 切り出した顔に名前（ラベル）を付ける</p>
+                <ul>
+                    <li>未登録の顔を選択</li>
+                    <li>名前を入力または選択</li>
+                    <li>「登録」ボタンで保存（自動エンコード）</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <div class="card-title">テストタブ</div>
+                <p><strong>目的</strong>: 認識精度を確認する</p>
+                <ul>
+                    <li>リアルタイムカメラで撮影</li>
+                    <li>認識結果と類似度を確認</li>
+                    <li>精度が低ければパラメータ調整または顔画像追加</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <div class="card-title">顔認識タブ</div>
+                <p><strong>目的</strong>: 検出パラメータの設定とサービス管理</p>
+                <ul>
+                    <li>検出モデル（HOG/CNN）</li>
+                    <li>upsample（0〜2）</li>
+                    <li>撮影間隔（3秒〜5分）</li>
+                    <li>類似度閾値（40〜60%）</li>
+                    <li>使用するROIプリセット</li>
+                </ul>
+                <p>設定変更後「設定を保存して反映」→ サービス再起動で適用</p>
+            </div>
+
+            <div class="card">
+                <div class="card-title">ダッシュボードタブ</div>
+                <p><strong>目的</strong>: 視聴状況の確認と検出ログ管理</p>
+                <ul>
+                    <li><strong>直近の画像</strong>: 最新の検出画像（ROI/BBox表示切替）</li>
+                    <li><strong>視聴時間</strong>: 本日・今週の人物別集計</li>
+                    <li><strong>検出状況</strong>: 直近3時間のバーコード表示</li>
+                    <li><strong>視聴時間分布</strong>: 時間帯別グラフ</li>
+                    <li><strong>視聴時間推移</strong>: 日別推移グラフ</li>
+                    <li><strong>検出ログ</strong>: クリックで詳細表示・再ラベリング</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="settings">
+            <h2>設定項目</h2>
+
+            <table>
+                <tr>
+                    <th>項目</th>
+                    <th>選択肢</th>
+                    <th>説明</th>
+                </tr>
+                <tr>
+                    <td>検出モデル</td>
+                    <td>HOG / CNN</td>
+                    <td>HOG: 高速・低精度、CNN: 低速・高精度</td>
+                </tr>
+                <tr>
+                    <td>upsample</td>
+                    <td>0 / 1 / 2</td>
+                    <td>高いほど小さい顔を検出可能（メモリ消費増）</td>
+                </tr>
+                <tr>
+                    <td>撮影間隔</td>
+                    <td>3秒〜5分</td>
+                    <td>短いほど精度向上（負荷増）</td>
+                </tr>
+                <tr>
+                    <td>類似度閾値</td>
+                    <td>40〜60%</td>
+                    <td>低いほど厳格（見逃し増）、高いほど緩め（誤認識増）</td>
+                </tr>
+                <tr>
+                    <td>ROI</td>
+                    <td>プリセット選択</td>
+                    <td>検出範囲を限定して負荷軽減・精度向上</td>
+                </tr>
+            </table>
+
+            <h3>推奨設定（Raspberry Pi 4）</h3>
+            <table>
+                <tr>
+                    <th>環境</th>
+                    <th>モデル</th>
+                    <th>upsample</th>
+                    <th>ROI</th>
+                </tr>
+                <tr>
+                    <td>近距離（1〜2m）</td>
+                    <td>CNN</td>
+                    <td>1</td>
+                    <td>任意</td>
+                </tr>
+                <tr>
+                    <td>中距離（2〜4m）</td>
+                    <td>CNN</td>
+                    <td>2</td>
+                    <td>推奨</td>
+                </tr>
+                <tr>
+                    <td>メモリ不足時</td>
+                    <td>HOG</td>
+                    <td>1</td>
+                    <td>必須</td>
+                </tr>
+            </table>
+        </section>
+
+        <section id="tips">
+            <h2>運用Tips</h2>
+
+            <h3>認識精度を上げるコツ</h3>
+            <ul>
+                <li>1人につき様々な角度・照明条件で15枚以上登録</li>
+                <li>実際の視聴位置で撮影した画像を使う</li>
+                <li>誤認識があれば再ラベリングで修正（学習効果あり）</li>
+                <li>定期的に新しい顔画像を追加（特に子供は成長で変化）</li>
+            </ul>
+
+            <h3>メモリ不足対策</h3>
+            <ol>
+                <li><strong>ROI設定</strong>（効果大）: 検出範囲を限定</li>
+                <li><strong>upsample削減</strong>（効果中）: 2→1に下げる</li>
+                <li><strong>HOG使用</strong>（効果大）: CNNより軽量</li>
+            </ol>
+            <pre><code># メモリ使用状況の確認
+free -h
+
+# OOMキラーのログ確認
+dmesg | grep -i "out of memory"</code></pre>
+
+            <h3>外出先からのアクセス</h3>
+            <p>Tailscale を使えば、外出先からもセキュアにアクセスできます。</p>
+            <pre><code># Raspberry Pi に Tailscale インストール
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+
+# スマホに Tailscale アプリをインストール
+# 同じアカウントでログイン
+# Tailscale IP でアクセス: http://&lt;Tailscale IP&gt;:5002</code></pre>
+        </section>
+
+        <section id="troubleshooting">
+            <h2>トラブルシューティング</h2>
+
+            <div class="card">
+                <div class="card-title">顔が検出されない</div>
+                <ul>
+                    <li>照明が十分か確認（逆光・暗所は苦手）</li>
+                    <li>カメラとの距離が遠すぎないか確認</li>
+                    <li>upsample を上げる（1→2）</li>
+                    <li>ROI設定で顔が範囲内にあるか確認</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <div class="card-title">誤認識が多い</div>
+                <ul>
+                    <li>類似度閾値を下げる（50%→40%）</li>
+                    <li>登録顔画像を追加する</li>
+                    <li>誤認識を再ラベリングで修正</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <div class="card-title">サービスが落ちる</div>
+                <ul>
+                    <li><code>journalctl -u tv-watch-tracker -f</code> でログ確認</li>
+                    <li>メモリ不足の場合は上記対策を実施</li>
+                    <li>ROI設定を確認（範囲外の座標がないか）</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Web UI に接続できない</div>
+                <ul>
+                    <li>Flask アプリが起動しているか確認</li>
+                    <li>ファイアウォール設定を確認</li>
+                    <li>正しいIPアドレス・ポート（5002）を使用しているか確認</li>
+                </ul>
+                <pre><code># プロセス確認
+ps aux | grep face_manager_app
+
+# ポート確認
+ss -tlnp | grep 5002</code></pre>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>TV Watch Tracker Manual</p>
+        <p><a href="https://github.com/Tsubasa-Ino/tv-watch-tracker" style="color: var(--primary);">GitHub Repository</a></p>
+    </footer>
+</body>
+</html>

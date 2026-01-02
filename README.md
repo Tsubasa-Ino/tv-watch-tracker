@@ -1,121 +1,143 @@
 # TV Watch Tracker
 
-Raspberry Pi上で動作する、顔認識によるテレビ視聴時間トラッカー。
+Raspberry Pi + 顔認識で、家族のテレビ視聴時間を自動トラッキングするシステム。
 
-## 機能
+**[📖 オンラインマニュアル](https://tsubasa-ino.github.io/tv-watch-tracker/manual.html)**
 
-- カメラで家族の顔を認識
-- 誰がいつテレビを見ていたかをCSVに記録
-- 日別・人別の視聴時間を集計
+## 特徴
 
-## セットアップ
+- USB カメラで顔を定期検出し、誰がいつテレビを見ていたかを記録
+- **Web UI** でブラウザから簡単セットアップ（顔登録・ROI設定・パラメータ調整）
+- スマホ対応レスポンシブデザイン
+- ダッシュボードで視聴時間をグラフ表示
+- 誤検出の再ラベリング機能で継続的に精度向上
+
+## スクリーンショット
+
+### ダッシュボード
+視聴時間の集計、検出状況のバーコード表示、時間帯別分布グラフ
+
+### 顔登録
+撮影→顔抽出→ラベリングの一気通貫フロー
+
+## 必要なもの
+
+- Raspberry Pi 4（4GB推奨）
+- USB カメラ
+- Python 3.9+
+
+## クイックスタート
 
 ### 1. 依存関係のインストール
 
 ```bash
+# 仮想環境作成
 python3 -m venv venv
 source venv/bin/activate
-pip install opencv-python face_recognition
+
+# ライブラリインストール
+pip install opencv-python face_recognition flask
 ```
 
-### 2. 設定ファイル
+### 2. 設定ファイル作成
 
 ```bash
 cp config.json.example config.json
-# 必要に応じて編集
 ```
 
-設定項目：
-| 項目 | 説明 | デフォルト |
-|------|------|-----------|
-| `camera_device` | カメラデバイス番号 | 0 |
-| `interval_sec` | 検出間隔（秒） | 5 |
-| `tolerance` | 顔認識の閾値（小さいほど厳格） | 0.5 |
-| `face_model` | 顔検出モデル（cnn/hog） | cnn |
-| `target_names` | 集計対象の名前リスト | ["mio", "yu", "tsubasa"] |
-
-### 3. 顔の登録
+### 3. Web UI 起動
 
 ```bash
-# 顔写真を撮影
-python capture_faces.py --name <名前> --count 15
-
-# new_faces/ に画像を配置後、エンコーディング生成
-python build_encodings.py
+python face_manager_app.py
 ```
 
-### 4. 監視の開始
+ブラウザで `http://<ラズパイIP>:5002` にアクセス。
+
+### 4. 初期設定（Web UIで実行）
+
+1. **撮影タブ**: 顔写真を撮影
+2. **ROI設定タブ**: 検出範囲を指定（任意）
+3. **顔抽出タブ**: 画像から顔を切り出し
+4. **顔登録タブ**: 顔に名前を付ける
+5. **テストタブ**: 認識精度を確認
+6. **顔認識タブ**: パラメータ調整・サービス起動
+
+## 設定項目
+
+| 項目 | 説明 | 選択肢 |
+|------|------|--------|
+| 検出モデル | 顔検出アルゴリズム | HOG（高速）/ CNN（高精度） |
+| upsample | 小さい顔の検出感度 | 0〜2 |
+| 撮影間隔 | 検出間隔 | 3秒〜5分 |
+| 類似度閾値 | 認識の厳しさ | 40%〜60% |
+| ROI | 検出範囲の限定 | プリセット選択 |
+
+## systemd サービス化
 
 ```bash
-python watch_faces.py
-```
-
-## 自動起動（systemd）
-
-```bash
-# サービスファイルをコピー
+# 顔認識サービス
 sudo cp tv-watch-tracker.service /etc/systemd/system/
-
-# 有効化
 sudo systemctl daemon-reload
 sudo systemctl enable tv-watch-tracker
 sudo systemctl start tv-watch-tracker
 
-# ステータス確認
-sudo systemctl status tv-watch-tracker
-
-# ログ確認
-journalctl -u tv-watch-tracker -f
-```
-
-## Webダッシュボード
-
-ブラウザで視聴データをグラフ表示できます。
-
-```bash
-# Flask インストール
-pip install flask
-
-# 起動
-python dashboard.py
-```
-
-ブラウザで `http://<ラズパイIP>:5000` にアクセス。
-
-### ダッシュボードの自動起動
-
-```bash
+# Web UI（任意）
 sudo cp tv-watch-dashboard.service /etc/systemd/system/
-sudo systemctl daemon-reload
 sudo systemctl enable tv-watch-dashboard
 sudo systemctl start tv-watch-dashboard
 ```
 
-## ログローテーション
-
-月別にログをアーカイブし、メインログファイルを軽量に保ちます。
+## 外出先からのアクセス（Tailscale）
 
 ```bash
-# 手動実行
-python rotate_logs.py
+# Tailscale インストール
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
 
-# cronで毎月1日に自動実行
-crontab -e
-# 以下を追加:
-# 0 0 1 * * /home/pi/venv/bin/python /home/pi/rotate_logs.py
+# スマホにも Tailscale アプリをインストールして同じアカウントでログイン
+# Tailscale IP でアクセス: http://<Tailscale IP>:5002
 ```
-
-アーカイブは `~/tv_watch_archives/` に gzip 圧縮で保存されます。
 
 ## ファイル構成
 
 | ファイル | 説明 |
 |---------|------|
-| `watch_faces.py` | メイン監視スクリプト |
-| `build_encodings.py` | 顔エンコーディング生成 |
-| `capture_faces.py` | 顔写真撮影ユーティリティ |
-| `summarize_tv.py` | 視聴時間集計 |
+| `face_manager_app.py` | Web UI（Flask） |
+| `watch_faces.py` | 顔認識サービス |
+| `summarize_tv.py` | 視聴時間集計CLI |
 | `rotate_logs.py` | ログローテーション |
-| `dashboard.py` | Webダッシュボード |
-| `tv-watch-tracker.service` | 監視用systemdサービス |
-| `tv-watch-dashboard.service` | ダッシュボード用systemdサービス |
+| `config.json.example` | 設定ファイルテンプレート |
+| `tv-watch-tracker.service` | 顔認識サービス定義 |
+| `tv-watch-dashboard.service` | Web UIサービス定義 |
+
+## 出力データ
+
+### tv_watch_log.csv
+
+```csv
+timestamp,name
+2025-01-02 10:00:00,mio
+2025-01-02 10:00:00,yu
+2025-01-02 10:00:10,mio
+```
+
+### 視聴時間計算
+
+連続検出間の時間を合計（2分以上空いたら別セッション）
+
+## Raspberry Pi 4 でのメモリ対策
+
+CNN + upsample=2 はメモリ不足になることがあります。
+
+**対策（効果順）：**
+1. ROI設定で検出範囲を限定
+2. upsample を 1 に下げる
+3. HOG モデルに切り替える
+
+## ライセンス
+
+MIT
+
+## 関連記事
+
+- [ラズパイ×顔認識でテレビ視聴時間の見える化](https://zenn.dev/tbs_noguchi/articles/3748b3ca842a8c)

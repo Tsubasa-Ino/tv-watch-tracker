@@ -34,6 +34,14 @@ tv_watch_archives/
 
 # Config (user-specific)
 config.json
+tv_watch_applied_config.json
+
+# Runtime data
+detections/
+captures/
+
+# Drafts
+drafts/
 
 # Other
 mjpg-streamer/

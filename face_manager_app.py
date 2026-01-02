@@ -2213,6 +2213,14 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+@app.route("/manual.html")
+def manual():
+    manual_path = os.path.join(BASE_DIR, "manual.html")
+    if os.path.exists(manual_path):
+        with open(manual_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return "Manual not found", 404
+
 @app.route("/start_camera", methods=["POST"])
 def start_camera():
     if is_service_running():
