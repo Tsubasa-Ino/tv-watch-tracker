@@ -2,6 +2,8 @@
 
 Raspberry Pi + 顔認識で、家族のテレビ視聴時間を自動トラッキングするシステム。
 
+**[📖 オンラインマニュアル](https://tsubasa-ino.github.io/tv-watch-tracker/manual.html)**
+
 ## 特徴
 
 - USB カメラで顔を定期検出し、誰がいつテレビを見ていたかを記録
