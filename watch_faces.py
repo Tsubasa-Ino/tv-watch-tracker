@@ -301,6 +301,27 @@ def main():
                 clean_path = os.path.join(DETECTIONS_DIR, "latest_frame_clean.jpg")
                 cv2.imwrite(clean_path, full_frame)
 
+                # latest_frame用のメタデータを保存（BBox表示用）
+                import json
+                latest_meta = {
+                    "roi": roi_info,
+                    "faces": []
+                }
+                for name, (top, right, bottom, left), dist in face_results:
+                    latest_meta["faces"].append({
+                        "name": name,
+                        "bbox": {
+                            "top": top + roi_offset_y,
+                            "right": right + roi_offset_x,
+                            "bottom": bottom + roi_offset_y,
+                            "left": left + roi_offset_x
+                        },
+                        "similarity": max(0, (1 - dist) * 100)
+                    })
+                latest_meta_path = os.path.join(DETECTIONS_DIR, "latest_frame_meta.json")
+                with open(latest_meta_path, 'w') as f:
+                    json.dump(latest_meta, f)
+
                 if seen_names:
                     logger.info("%s -> %s", ts, ", ".join(sorted(seen_names)))
 

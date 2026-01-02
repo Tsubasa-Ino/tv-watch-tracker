@@ -222,6 +222,65 @@ HTML_TEMPLATE = """
         .roi-preset-item .delete-roi { color: #ff6b6b; cursor: pointer; font-size: 1.2em; }
         .label-group { background: #0f3460; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
         .label-group h4 { color: #ffe66d; margin-bottom: 10px; }
+
+        /* スマホ用レスポンシブ */
+        @media (max-width: 768px) {
+            .tabs {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+            .tabs::-webkit-scrollbar { display: none; }
+            .tab {
+                padding: 12px 14px;
+                font-size: 0.85em;
+                white-space: nowrap;
+                flex-shrink: 0;
+            }
+            .content { padding: 12px; }
+            .card { padding: 15px; margin-bottom: 15px; }
+            h2 { font-size: 1.1em; margin-bottom: 12px; }
+            h3 { font-size: 1em; }
+            .btn {
+                padding: 10px 16px;
+                font-size: 0.9em;
+                margin: 3px;
+            }
+            .btn-small { padding: 8px 12px; font-size: 0.8em; }
+            .grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
+            .params { gap: 10px; }
+            .params .form-group { min-width: 120px; }
+            .form-group input, .form-group select { padding: 8px; font-size: 0.9em; }
+            .modal img { max-width: 95%; max-height: 50%; }
+            .modal-close { top: 10px; right: 10px; font-size: 1.5em; }
+            #detectionControls { font-size: 0.85em; }
+            #detectionControls label { margin-right: 8px; }
+            #relabelControls { width: 95%; padding: 12px; }
+            #relabelControls h4 { font-size: 0.95em; }
+            .roi-preset { gap: 8px; }
+            .roi-preset-item { padding: 8px 12px; font-size: 0.9em; }
+            .detection-result .face-box { padding: 8px; margin: 3px; }
+            .detection-result .face-box img { width: 70px; height: 70px; }
+            .face-item img { width: 60px; height: 60px; }
+        }
+
+        @media (max-width: 480px) {
+            .tab { padding: 10px 10px; font-size: 0.8em; }
+            .content { padding: 8px; }
+            .card { padding: 12px; }
+            h2 { font-size: 1em; }
+            .btn { padding: 8px 12px; font-size: 0.85em; }
+            .grid { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; }
+            .params .form-group { min-width: 100%; }
+            #todayByLabel > div, #weekByLabel > div {
+                min-width: calc(50% - 5px) !important;
+                padding: 8px 10px !important;
+            }
+            #todayByLabel > div > div:last-child,
+            #weekByLabel > div > div:last-child {
+                font-size: 1.2em !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -239,9 +298,13 @@ HTML_TEMPLATE = """
         <div id="camera" class="tab-content active">
             <div class="card">
                 <h2 id="cameraTitle">プレビュー</h2>
-                <!-- サービス稼働中: 最新検出画像 -->
+                <!-- サービス稼働中: 検出画像 -->
                 <div id="serviceImageContainer" style="display:none;">
-                    <p style="color:#4ecdc4;margin-bottom:10px;">サービス稼働中 - 最新の検出画像を表示</p>
+                    <p style="color:#4ecdc4;margin-bottom:10px;">サービス稼働中 - 検出画像を表示</p>
+                    <div style="margin-bottom:10px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+                        <label><input type="checkbox" id="camShowRoi" checked onchange="updateServiceImage()"> ROI表示</label>
+                        <label><input type="checkbox" id="camShowBbox" checked onchange="updateServiceImage()"> BBox表示</label>
+                    </div>
                     <div class="preview-container">
                         <img id="serviceImage" src="" style="width:100%;">
                     </div>
@@ -609,6 +672,15 @@ HTML_TEMPLATE = """
             <label style="color:#fff;"><input type="checkbox" id="detModalScore" onchange="updateDetectionImage()" checked> スコア</label>
         </div>
         <img id="modalImage" src="">
+        <div id="relabelControls" style="display:none;margin-top:15px;background:#16213e;padding:15px;border-radius:8px;max-width:90%;width:400px;">
+            <h4 style="color:#ffe66d;margin-bottom:10px;">検出された顔の再ラベリング</h4>
+            <div id="relabelFaces"></div>
+            <div style="margin-top:15px;text-align:center;">
+                <button class="btn btn-success btn-small" onclick="saveRelabels()">変更を保存</button>
+                <button class="btn btn-danger btn-small" onclick="deleteDetection()">この検出を削除</button>
+            </div>
+            <div id="relabelStatus" style="margin-top:10px;text-align:center;"></div>
+        </div>
         <div class="modal-controls" id="modalControls">
             <button class="btn btn-danger" onclick="deleteModalImage()">削除</button>
         </div>
@@ -652,7 +724,7 @@ HTML_TEMPLATE = """
                 if (data.service_running) {
                     serviceContainer.style.display = 'block';
                     cameraContainer.style.display = 'none';
-                    title.textContent = 'サービス検出画像';
+                    title.textContent = '検出画像';
                     updateServiceImage();
                     startServiceImageRefresh();
                 } else {
@@ -665,9 +737,11 @@ HTML_TEMPLATE = """
         }
 
         function updateServiceImage() {
-            // サービスの最新フレームを取得
+            // サービスの最新フレームを取得（ROI/BBox表示切替対応）
             const img = document.getElementById('serviceImage');
-            const newSrc = `/api/service_frame?t=${Date.now()}`;
+            const showRoi = document.getElementById('camShowRoi')?.checked ?? true;
+            const showBbox = document.getElementById('camShowBbox')?.checked ?? true;
+            const newSrc = `/api/latest_image?roi=${showRoi}&bbox=${showBbox}&t=${Date.now()}`;
             // 画像が読み込めるか確認
             fetch(newSrc).then(r => {
                 if (r.ok) {
@@ -1630,6 +1704,9 @@ HTML_TEMPLATE = """
 
         let currentDetectionTimestamp = '';
 
+        let currentDetectionMeta = null;
+        let registeredLabels = [];
+
         function showDetectionModal(images, timestamp) {
             if (!images || images.length === 0) {
                 alert('この検出の画像がありません');
@@ -1646,15 +1723,122 @@ HTML_TEMPLATE = """
                 document.getElementById('detModalScore').checked = true;
                 updateDetectionImage();
                 document.getElementById('detectionControls').style.display = 'block';
+                // 再ラベリング用データを読み込む
+                loadRelabelData();
             } else {
                 // 旧形式の場合はそのまま表示
                 document.getElementById('modalImage').src = '/detection_image/' + firstImage + '?t=' + Date.now();
                 document.getElementById('detectionControls').style.display = 'none';
+                document.getElementById('relabelControls').style.display = 'none';
             }
             modalImagePath = firstImage;
             modalImageType = 'detection';
             document.getElementById('modalControls').style.display = 'none';
+            document.getElementById('relabelStatus').textContent = '';
             document.getElementById('modal').classList.add('active');
+        }
+
+        function loadRelabelData() {
+            // 登録済みラベル一覧を取得
+            fetch('/api/label_status').then(r => r.json()).then(data => {
+                registeredLabels = Object.keys(data);
+                // メタデータを取得
+                fetch(`/api/detection_meta/${currentDetectionTimestamp}`).then(r => r.json()).then(meta => {
+                    currentDetectionMeta = meta;
+                    renderRelabelFaces();
+                    document.getElementById('relabelControls').style.display = 'block';
+                }).catch(() => {
+                    document.getElementById('relabelControls').style.display = 'none';
+                });
+            });
+        }
+
+        function renderRelabelFaces() {
+            const container = document.getElementById('relabelFaces');
+            if (!currentDetectionMeta || !currentDetectionMeta.faces || currentDetectionMeta.faces.length === 0) {
+                container.innerHTML = '<p style="color:#888;">顔データがありません</p>';
+                return;
+            }
+            const options = registeredLabels.map(l => `<option value="${l}">${l}</option>`).join('') + '<option value="unknown">unknown</option><option value="__new__">+ 新規入力...</option>';
+            container.innerHTML = currentDetectionMeta.faces.map((face, i) => `
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;background:#0f3460;border-radius:6px;flex-wrap:wrap;">
+                    <div style="min-width:60px;text-align:center;">
+                        <div style="color:${nameColors[face.name] || '#888'};font-weight:bold;">${face.name}</div>
+                        <div style="font-size:0.8em;color:#888;">${face.similarity?.toFixed(0) || 0}%</div>
+                    </div>
+                    <span style="color:#888;">→</span>
+                    <select id="relabel_${i}" onchange="toggleNewLabelInput(${i})" style="flex:1;min-width:100px;padding:8px;border-radius:4px;background:#1a1a2e;color:#fff;border:1px solid #333;">
+                        ${options.replace(`value="${face.name}"`, `value="${face.name}" selected`)}
+                    </select>
+                    <input type="text" id="relabel_new_${i}" placeholder="新しいラベル名" style="display:none;flex:1;min-width:100px;padding:8px;border-radius:4px;background:#1a1a2e;color:#fff;border:1px solid #4ecdc4;">
+                </div>
+            `).join('');
+        }
+
+        function toggleNewLabelInput(index) {
+            const select = document.getElementById(`relabel_${index}`);
+            const input = document.getElementById(`relabel_new_${index}`);
+            if (select.value === '__new__') {
+                input.style.display = 'block';
+                input.focus();
+            } else {
+                input.style.display = 'none';
+                input.value = '';
+            }
+        }
+
+        function saveRelabels() {
+            if (!currentDetectionMeta || !currentDetectionTimestamp) return;
+            const updates = [];
+            currentDetectionMeta.faces.forEach((face, i) => {
+                const select = document.getElementById(`relabel_${i}`);
+                const newInput = document.getElementById(`relabel_new_${i}`);
+                let newName = select.value;
+                if (newName === '__new__') {
+                    newName = newInput.value.trim();
+                    if (!newName) {
+                        return; // 空の場合はスキップ
+                    }
+                }
+                if (newName !== face.name) {
+                    updates.push({index: i, old_name: face.name, new_name: newName});
+                }
+            });
+            if (updates.length === 0) {
+                document.getElementById('relabelStatus').innerHTML = '<span style="color:#888;">変更なし</span>';
+                return;
+            }
+            fetch('/api/relabel_detection', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({timestamp: currentDetectionTimestamp, updates: updates})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    document.getElementById('relabelStatus').innerHTML = '<span style="color:#4ecdc4;">保存しました</span>';
+                    loadRelabelData();
+                    updateDetectionImage();
+                    loadDashboardFast();
+                } else {
+                    document.getElementById('relabelStatus').innerHTML = `<span style="color:#ff6b6b;">エラー: ${data.error}</span>`;
+                }
+            });
+        }
+
+        function deleteDetection() {
+            if (!currentDetectionTimestamp) return;
+            if (!confirm('この検出記録を削除しますか？\\nCSVログとメタデータが削除されます。')) return;
+            fetch('/api/delete_detection', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({timestamp: currentDetectionTimestamp})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    closeModal();
+                    loadDashboardFast();
+                } else {
+                    alert('削除エラー: ' + data.error);
+                }
+            });
         }
 
         function updateDetectionImage() {
@@ -2853,19 +3037,27 @@ def api_dashboard():
     # 直近の画像（detectionsフォルダ優先、なければcaptures）
     latest_image = None
     if os.path.exists(DETECTIONS_DIR):
-        all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
-        if all_images:
-            latest_image = os.path.basename(all_images[0])
-            last_detection_image = all_images[0]
-            # メタデータがあれば読み込む
-            meta_path = all_images[0].replace('.jpg', '.json')
-            if os.path.exists(meta_path):
+        # latest_frame.jpg を優先
+        latest_frame_path = os.path.join(DETECTIONS_DIR, "latest_frame.jpg")
+        if os.path.exists(latest_frame_path):
+            latest_image = "latest_frame.jpg"
+            last_detection_image = latest_frame_path
+            # latest_frame専用のメタファイルを使用
+            latest_meta_path = os.path.join(DETECTIONS_DIR, "latest_frame_meta.json")
+            if os.path.exists(latest_meta_path):
                 try:
-                    with open(meta_path) as f:
+                    with open(latest_meta_path) as f:
                         last_detection_meta = json.load(f)
                 except:
                     last_detection_meta = None
             else:
+                last_detection_meta = None
+        else:
+            # latest_frame.jpgがない場合は従来通り
+            all_images = sorted(glob.glob(os.path.join(DETECTIONS_DIR, "*.jpg")), reverse=True)
+            if all_images:
+                latest_image = os.path.basename(all_images[0])
+                last_detection_image = all_images[0]
                 last_detection_meta = None
 
     # detectionsがなければcapturesから
@@ -2903,10 +3095,15 @@ def api_latest_image():
     show_roi = request.args.get('roi', 'true').lower() == 'true'
     show_bbox = request.args.get('bbox', 'true').lower() == 'true'
 
-    if not last_detection_image or not os.path.exists(last_detection_image):
+    # クリーンな画像（オーバーレイなし）を優先使用
+    clean_path = os.path.join(DETECTIONS_DIR, "latest_frame_clean.jpg")
+    if os.path.exists(clean_path):
+        img = cv2.imread(clean_path)
+    elif last_detection_image and os.path.exists(last_detection_image):
+        img = cv2.imread(last_detection_image)
+    else:
         return "Not found", 404
 
-    img = cv2.imread(last_detection_image)
     if img is None:
         return "Failed to load", 500
 
@@ -2925,14 +3122,19 @@ def api_latest_image():
         for face in faces:
             bbox = face.get('bbox', {})
             if bbox:
-                x, y, w, h = bbox.get('x', 0), bbox.get('y', 0), bbox.get('w', 0), bbox.get('h', 0)
+                # top, right, bottom, left 形式
+                top = bbox.get('top', 0)
+                right = bbox.get('right', 0)
+                bottom = bbox.get('bottom', 0)
+                left = bbox.get('left', 0)
                 name = face.get('name', 'Unknown')
                 similarity = face.get('similarity', 0)
+                color = (0, 255, 0) if name != 'unknown' else (0, 0, 255)
                 # 顔枠を描画
-                cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                cv2.rectangle(img, (left, top), (right, bottom), color, 2)
                 # ラベル表示
                 label = f"{name} ({similarity:.0f}%)" if similarity else name
-                cv2.putText(img, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(img, label, (left, top-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     _, jpeg = cv2.imencode('.jpg', img)
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
@@ -3268,6 +3470,167 @@ def detection_render(timestamp):
 
     _, jpeg = cv2.imencode('.jpg', img)
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
+
+@app.route("/api/detection_meta/<timestamp>")
+def api_detection_meta(timestamp):
+    """検出メタデータを返す"""
+    meta_path = os.path.join(DETECTIONS_DIR, f"detection_{timestamp}_meta.json")
+    if not os.path.exists(meta_path):
+        return jsonify({"error": "Meta not found"}), 404
+    try:
+        with open(meta_path, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/relabel_detection", methods=["POST"])
+def api_relabel_detection():
+    """検出のラベルを変更し、顔画像を登録する"""
+    data = request.json
+    timestamp = data.get('timestamp')
+    updates = data.get('updates', [])
+
+    if not timestamp or not updates:
+        return jsonify({"success": False, "error": "Invalid request"})
+
+    # メタデータを更新
+    meta_path = os.path.join(DETECTIONS_DIR, f"detection_{timestamp}_meta.json")
+    orig_path = os.path.join(DETECTIONS_DIR, f"detection_{timestamp}_original.jpg")
+    if not os.path.exists(meta_path):
+        return jsonify({"success": False, "error": "Meta not found"})
+
+    try:
+        with open(meta_path, 'r') as f:
+            meta = json.load(f)
+
+        # 元画像を読み込み（顔抽出用）
+        orig_img = None
+        if os.path.exists(orig_path):
+            orig_img = cv2.imread(orig_path)
+
+        # 顔ラベルを更新＆顔画像を抽出
+        saved_faces = []
+        for update in updates:
+            idx = update['index']
+            old_name = update['old_name']
+            new_name = update['new_name']
+            if 0 <= idx < len(meta.get('faces', [])):
+                meta['faces'][idx]['name'] = new_name
+
+                # 顔画像を抽出して保存（unknownでない場合のみ）
+                if new_name != 'unknown' and orig_img is not None:
+                    bbox = meta['faces'][idx].get('bbox', {})
+                    if bbox:
+                        top = bbox.get('top', 0)
+                        right = bbox.get('right', 0)
+                        bottom = bbox.get('bottom', 0)
+                        left = bbox.get('left', 0)
+                        # マージンを追加
+                        h, w = orig_img.shape[:2]
+                        margin = int((bottom - top) * 0.2)
+                        top = max(0, top - margin)
+                        bottom = min(h, bottom + margin)
+                        left = max(0, left - margin)
+                        right = min(w, right + margin)
+                        face_img = orig_img[top:bottom, left:right]
+                        if face_img.size > 0:
+                            # 保存ファイル名を生成
+                            face_filename = f"relabel_{timestamp}_{idx}_{new_name}.jpg"
+                            face_path = os.path.join(FACES_DIR, face_filename)
+                            cv2.imwrite(face_path, face_img)
+                            # メタデータも保存
+                            face_meta = {"label": new_name, "source": f"detection_{timestamp}"}
+                            with open(face_path + '.json', 'w') as f:
+                                json.dump(face_meta, f)
+                            saved_faces.append(face_filename)
+
+        with open(meta_path, 'w') as f:
+            json.dump(meta, f)
+
+        # CSVログも更新
+        config = load_config()
+        log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
+
+        # タイムスタンプをCSV形式に変換 (YYYYMMDD_HHMMSS -> YYYY-MM-DD HH:MM:SS)
+        ts_csv = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]} {timestamp[9:11]}:{timestamp[11:13]}:{timestamp[13:15]}"
+
+        if os.path.exists(log_path):
+            # CSVを読み込んで更新
+            rows = []
+            updated = False
+            with open(log_path, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for row in reader:
+                    if row['timestamp'] == ts_csv:
+                        for update in updates:
+                            if row['name'] == update['old_name']:
+                                row['name'] = update['new_name']
+                                updated = True
+                    rows.append(row)
+
+            if updated:
+                with open(log_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+
+        # 自動エンコード（保存した顔のラベルごとに実行）
+        encoded_labels = set()
+        for update in updates:
+            new_name = update['new_name']
+            if new_name != 'unknown' and new_name not in encoded_labels:
+                build_encoding_for_label_internal(new_name)
+                encoded_labels.add(new_name)
+
+        return jsonify({"success": True, "saved_faces": saved_faces, "encoded_labels": list(encoded_labels)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/api/delete_detection", methods=["POST"])
+def api_delete_detection():
+    """検出記録を削除する"""
+    data = request.json
+    timestamp = data.get('timestamp')
+
+    if not timestamp:
+        return jsonify({"success": False, "error": "Invalid request"})
+
+    try:
+        # 関連ファイルを削除
+        patterns = [
+            f"detection_{timestamp}_original.jpg",
+            f"detection_{timestamp}_meta.json",
+            f"detection_{timestamp}_*.jpg"
+        ]
+        for pattern in patterns:
+            for f in glob.glob(os.path.join(DETECTIONS_DIR, pattern)):
+                os.remove(f)
+
+        # CSVログから削除
+        config = load_config()
+        log_path = os.path.expanduser(config.get("log_path", "~/tv_watch_log.csv"))
+
+        # タイムスタンプをCSV形式に変換
+        ts_csv = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]} {timestamp[9:11]}:{timestamp[11:13]}:{timestamp[13:15]}"
+
+        if os.path.exists(log_path):
+            rows = []
+            with open(log_path, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for row in reader:
+                    if row['timestamp'] != ts_csv:
+                        rows.append(row)
+
+            with open(log_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route("/api/service_status")
 def api_service_status():
