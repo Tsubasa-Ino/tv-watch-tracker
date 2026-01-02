@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TV Watch Tracker マニュアル</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({startOnLoad:true, theme:'dark'});</script>
     <style>
         :root {
             --primary: #00d4ff;
@@ -279,6 +281,57 @@
                 <li><strong>再ラベリング</strong>: 誤認識を修正して精度向上</li>
                 <li><strong>スマホ対応</strong>: 外出先からも確認可能（Tailscale使用）</li>
             </ul>
+
+            <h3>システム構成図</h3>
+            <div class="mermaid">
+flowchart TB
+    subgraph RaspberryPi["🍓 Raspberry Pi 4"]
+        subgraph Services["サービス"]
+            WF["watch_faces.py\n顔認識サービス\n(systemd)"]
+            FM["face_manager_app.py\nWeb UI\n(Flask :5002)"]
+        end
+
+        subgraph Storage["ストレージ"]
+            CONFIG["config.json\n設定ファイル"]
+            ENC["encodings.pkl\n顔エンコーディング"]
+            LOG["tv_watch_log.csv\n検出ログ"]
+            DET["detections/\n検出画像"]
+            FACE["faces/\n顔画像"]
+        end
+
+        CAM["📷 USB カメラ"]
+    end
+
+    subgraph Clients["クライアント"]
+        PC["💻 PC ブラウザ"]
+        SP["📱 スマホ"]
+    end
+
+    subgraph Network["ネットワーク"]
+        LAN["LAN\n192.168.x.x:5002"]
+        TS["Tailscale\n100.x.x.x:5002"]
+    end
+
+    CAM -->|撮影| WF
+    WF -->|検出結果| LOG
+    WF -->|画像保存| DET
+    WF -->|設定読込| CONFIG
+    WF -->|エンコーディング読込| ENC
+
+    FM -->|設定変更| CONFIG
+    FM -->|顔登録| FACE
+    FM -->|エンコーディング更新| ENC
+    FM -->|ログ読込| LOG
+    FM -->|画像読込| DET
+
+    PC --> LAN
+    SP --> LAN
+    SP --> TS
+    LAN --> FM
+    TS --> FM
+
+    FM -.->|サービス制御| WF
+            </div>
 
             <h3>作業フロー</h3>
             <div class="flow">
